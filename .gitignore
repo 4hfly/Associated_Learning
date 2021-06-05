@@ -1,2 +1,7 @@
 
 *.tfrecords
+.vscode/launch.json
+.vscode/settings.json
+*.pyc
+*.raw
+*.pyc
