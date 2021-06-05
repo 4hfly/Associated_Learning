@@ -4,9 +4,19 @@
 import os
 
 import pandas as pd
+from datasets import load_dataset
 from torch.utils.data import Dataset
 from torchvision import datasets
 from torchvision.io import read_image
+
+
+class WikiFR(object):
+
+    def __init__(self) -> None:
+        super(WikiFR, self).__init__()
+
+    def load(self) -> Dataset:
+        return load_dataset('wikipedia', '20200501.fr')
 
 
 class CoolDataset(Dataset):
