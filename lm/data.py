@@ -18,6 +18,7 @@ class Corpus(object):
         # assert os.path.exists(path)
         all_data = []
         if self.ids == False:
+            # file is not in word_id format. and turn all data into word_id, and save file.
             with open(path, 'r') as f:
                 lines = f.readlines()
                 for line in tqdm(lines, total=len(lines)):
@@ -33,6 +34,8 @@ class Corpus(object):
 
             return all_data
         else:
+            # if file is in word_id format, then concat all words as a very long tensor [15, 432, 2, 100,8976,342 ........]
+            # 如果已經轉成id格式，就把data讀起來接成一個超長的tensor
             all_data = []
             with open(path, 'r') as f:
                 lines = f.readlines()
@@ -43,7 +46,6 @@ class Corpus(object):
             print('total tokens',len(all_data))
             for i, t in enumerate(all_data):
                 tokens[i] = int(t)
-
             return tokens
             
 

@@ -41,7 +41,7 @@ parser.add_argument('--log-interval', type=int, default=100, metavar='N',
 parser.add_argument('--save', type=str,  default='lm',
                     help='path to save the final model')
 args = parser.parse_args()
-
+# 這邊應該要把tokenizer的東西加進去，之後再加。
 # Set the random seed manually for reproducibility.
 torch.manual_seed(args.seed)
 if torch.cuda.is_available():
@@ -101,6 +101,7 @@ criterion = nn.CrossEntropyLoss()
 
 def repackage_hidden(h):
     """Wraps hidden states in new Variables, to detach them from their history."""
+    # 我有把這邊改成符合版本的東西
     return h.detach()
     if isinstance(h, torch.Tensor):
         return h.detach()
@@ -145,7 +146,7 @@ def train():
     model.train()
     total_loss = 0
     start_time = time.time()
-    ntokens = 25000
+    ntokens = 25000 # 強行設定25000 不過之後可以改成自動的
     hidden = model.init_hidden(args.batch_size)
     for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
         data, targets = get_batch(train_data, i)
@@ -160,7 +161,7 @@ def train():
         loss.backward()
         # print(loss.item())
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
-        torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip) # 這邊改成inplace，基本都是版本問題而已
         for p in model.parameters():
             p.data.add_(p.grad, alpha=-lr)
 
@@ -169,8 +170,10 @@ def train():
         if batch % args.log_interval == 0 and batch > 0:
             # print(total_loss.item())
             # print(args.log_interval)
-            cur_loss = total_loss.item() / args.log_interval
+            cur_loss = total_loss.item() / args.log_interval # 這邊也是小改成loss.item()
             elapsed = time.time() - start_time
+
+            # 這一行會print loss, epoch, lr, training_time, perplexity.
             print('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
                     'loss {:5.2f} | ppl {:8.2f}'.format(
                 epoch, batch, len(train_data) // args.bptt, lr,
@@ -184,6 +187,7 @@ best_val_loss = None
 lr_step = 0
 # At any point you can hit Ctrl + C to break out of training early.
 try:
+    # 這邊直接train，不跑validation了，感覺沒差，不過lr也許要看怎麼調整好一點，雖然我測試一下好像不用調整也可以
     for epoch in range(1, args.epochs+1):
         epoch_start_time = time.time()
         train()
