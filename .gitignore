@@ -1,14 +1,13 @@
 
-*.tfrecords
 .vscode/launch.json
 .vscode/settings.json
+*.tfrecords
 *.pyc
 *.raw
-*.pyc
-*.de
-*.fr
-*.cs
-*.en
-*.es
-*.ru
 *.annotation
+*.cs
+*.de
+*.es
+*.en
+*.fr
+*.ru
