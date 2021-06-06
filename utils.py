@@ -10,12 +10,19 @@ def al_loss():
     pass
 
 
-def bpe(input, files="data/vocab_fr.json"):
+def bpe(
+    input,
+    lang="en",
+    files=[
+        "data/tokenizer/en/vocab.json",
+        "data/tokenizer/en/merge.txt"
+    ]
+):
 
     tokenizer = BPETokenizer(files=files)
     encoded = tokenizer.encode(input)
     decoded = tokenizer.decode(encoded)
-    return  encoded, decoded
+    return encoded, decoded
 
 
 def test():

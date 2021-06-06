@@ -25,10 +25,18 @@ class BPETokenizer(object):
         lang="en",
         files=None
     ) -> None:
+        """
+
+        Args:
+            vocab_size:
+            min_freq: minimun frequency
+            lang: 
+            files: [List] [(path) "vocab.json", (path) "merge.txt"]
+        """
         super(BPETokenizer, self).__init__()
 
         if files is not None:
-            self.tokenizer = Tokenizer.from_file(files)
+            self.tokenizer = Tokenizer.model(files)
         else:
             self.tokenizer = Tokenizer(BPE())
 
@@ -36,13 +44,15 @@ class BPETokenizer(object):
         self.trainer = BpeTrainer(
             vocab_size=vocab_size,
             min_frequency=min_freq,
-            special_tokens=["[SEP]", "[PAD]"],
+            special_tokens=["[PAD]", "[SEP]"],
             initial_alphabet=ByteLevel.alphabet()
         )
 
+        # https://huggingface.co/docs/tokenizers/python/latest/components.html#normalizers
         self.tokenizer.normalizer = Sequence([NFKC(), Lowercase()])
+        # https://huggingface.co/docs/tokenizers/python/latest/components.html#pre-tokenizers
         self.tokenizer.pre_tokenizer = ByteLevel()
-        self.decoder = ByteLevelDecoder()
+        self.tokenizer.decoder = ByteLevelDecoder()
 
     def train(self, files=None) -> None:
 
@@ -55,7 +65,7 @@ class BPETokenizer(object):
 
     def save(self) -> None:
 
-        self.tokenizer.save(f"data/vocab_{self.lang}.json")
+        self.tokenizer.model.save(f"data/tokenizer/{self.lang}")
 
     def encode(self, input: Union[str, List[str], Tuple[str]]) -> Encoding:
 
@@ -63,6 +73,7 @@ class BPETokenizer(object):
 
     def decode(self, input: Encoding) -> str:
 
+        # 注意 type(input) == Encoding
         return self.tokenizer.decode(input.ids)
 
 
@@ -75,10 +86,15 @@ if __name__ == "__main__":
         "data/wmt14/giga/giga-fren.release2.fixed.fr",
         "data/wmt14/news-commentary/news-commentary-v9.fr-en.fr",
         "data/wmt14/un/undoc.2000.fr-en.fr"
-        ]
+    ]
     tokenizer.train()
     tokenizer.save()
     encoded = tokenizer.encode("Bonjour, vous tous ! Comment ça va 😁 ?")
     print(encoded.tokens)
+    # Outputs:
+    # ['Ġbon', 'j', 'our', ',', 'Ġv', 'ous', 'Ġto', 'us', 'Ġ!', 'Ġcomment',
+    #  'ĠÃ', '§', 'a', 'Ġva', 'Ġ', 'ð', 'Ł', 'ĺ', 'ģ', 'Ġ?']
     decoded = tokenizer.decode(encoded)
     print(decoded)
+    # Outputs:
+    # bonjour, vous tous ! comment ça va 😁 ?
