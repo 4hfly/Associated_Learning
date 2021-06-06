@@ -30,13 +30,13 @@ class BPETokenizer(object):
         if files is not None:
             self.tokenizer = Tokenizer.from_file(files)
         else:
-            self.tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
+            self.tokenizer = Tokenizer(BPE())
 
         self.lang = lang
         self.trainer = BpeTrainer(
             vocab_size=vocab_size,
             min_frequency=min_freq,
-            special_tokens=["[UNK]", "[SEP]", "[PAD]"],
+            special_tokens=["[SEP]", "[PAD]"],
             initial_alphabet=ByteLevel.alphabet()
         )
 
