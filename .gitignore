@@ -5,3 +5,10 @@
 *.pyc
 *.raw
 *.pyc
+*.de
+*.fr
+*.cs
+*.en
+*.es
+*.ru
+*.annotation
