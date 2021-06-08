@@ -12,7 +12,7 @@ class Corpus(object):
         self.tokenizer = Tokenizer(BPE())
         self.tokenizer.model = BPE('data/vocab.json', 'data/merges.txt')
         self.train = self.tokenize(path)
-        
+        self.valid = self.tokenize('data/pretrain/pretrain.valid.en.ids') 
 
     def tokenize(self, path):
         # assert os.path.exists(path)
@@ -50,5 +50,5 @@ class Corpus(object):
             
 
 
-# C = Corpus('data/pretrain/test.en', False)
+# C = Corpus('data/pretrain/pretrain.train.en', False)
 

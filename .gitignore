@@ -1,2 +1,6 @@
 
 *.tfrecords
+lm/data/pretrain
+lm/data/train
+lm/data/test
+lm/data/valid

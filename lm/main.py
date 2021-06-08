@@ -10,7 +10,7 @@ import data
 import model
 
 parser = argparse.ArgumentParser(description='PyTorch PennTreeBank RNN/LSTM Language Model')
-parser.add_argument('--data', type=str, default='./data/pretrain/news.2012.en.shuffled.ids',
+parser.add_argument('--data', type=str, default='./data/pretrain/pretrain.train.en.ids',
                     help='location of the data corpus')
 parser.add_argument('--emsize', type=int, default=200,
                     help='size of word embeddings')
@@ -22,7 +22,7 @@ parser.add_argument('--lr', type=float, default=20,
                     help='initial learning rate')
 parser.add_argument('--clip', type=float, default=0.25,
                     help='gradient clipping')
-parser.add_argument('--epochs', type=int, default=50,
+parser.add_argument('--epochs', type=int, default=40,
                     help='upper epoch limit')
 parser.add_argument('--batch_size', type=int, default=512, metavar='N',
                     help='batch size')
@@ -79,9 +79,9 @@ def batchify(data, bsz):
         data = data.cuda()
     return data
 
-eval_batch_size = 10
+eval_batch_size = 128
 train_data = batchify(corpus.train, args.batch_size)
-# val_data = batchify(corpus.valid, eval_batch_size)
+val_data = batchify(corpus.valid, eval_batch_size)
 # test_data = batchify(corpus.test, eval_batch_size)
 
 ###############################################################################
@@ -119,26 +119,32 @@ def repackage_hidden(h):
 # by the batchify function. The chunks are along dimension 0, corresponding
 # to the seq_len dimension in the LSTM.
 
+
+
 def get_batch(source, i, evaluation=False):
     seq_len = min(args.bptt, len(source) - 1 - i)
-    data = Variable(source[i:i+seq_len], volatile=evaluation)
-    target = Variable(source[i+1:i+1+seq_len].view(-1))
+    data = source[i:i+seq_len]
+    target = source[i+1:i+1+seq_len].view(-1)
     return data, target
+
 
 
 def evaluate(data_source):
     # Turn on evaluation mode which disables dropout.
     model.eval()
     total_loss = 0
-    ntokens = len(corpus.dictionary)
+    # ntokens = len(corpus.dictionary)
+    ntokens = 25000
     hidden = model.init_hidden(eval_batch_size)
-    for i in range(0, data_source.size(0) - 1, args.bptt):
-        data, targets = get_batch(data_source, i, evaluation=True)
-        output, hidden = model(data, hidden)
-        output_flat = output.view(-1, ntokens)
-        total_loss += len(data) * criterion(output_flat, targets).data
-        hidden = repackage_hidden(hidden)
-    return total_loss[0] / len(data_source)
+    with torch.no_grad():
+        for i in range(0, data_source.size(0) - 1, args.bptt):
+            data, targets = get_batch(data_source, i, evaluation=True)
+            output, hidden = model(data, hidden)
+            output_flat = output.view(-1, ntokens)
+            total_loss += len(data) * criterion(output_flat, targets).data
+            hidden = repackage_hidden(hidden)
+
+    return total_loss.item() / len(data_source)
 
 
 def train():
@@ -192,10 +198,23 @@ try:
         epoch_start_time = time.time()
         train()
         dp = args.save + f'.e{epoch}.pth'
-        torch.save(model.state_dict(), dp)  
-        # if epoch - lr_step > 9:
-        #     lr = lr/4
-        #     lr_step = epoch
+        # torch.save(model.state_dict(), dp)  
+        val_loss = evaluate(val_data)
+
+        print('-' * 89)
+        print('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
+                'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
+                                        val_loss, math.exp(val_loss)))
+        print('-' * 89)
+
+        if not best_val_loss or val_loss < best_val_loss:
+            dp = args.save + f'.e{epoch}.pth'
+            torch.save(model.state_dict(), dp)
+            best_val_loss = val_loss
+        else:
+            if epoch > 15:
+                lr /= 4
+
 
 except KeyboardInterrupt:
     print('-' * 89)
