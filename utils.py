@@ -12,14 +12,14 @@ def al_loss():
 
 def bpe(
     input,
-    lang="en",
+    lang="fr",
     files=[
-        "data/tokenizer/en/vocab.json",
-        "data/tokenizer/en/merge.txt"
+        "data/tokenizer/fr/vocab.json",
+        "data/tokenizer/fr/merges.txt"
     ]
 ):
 
-    tokenizer = BPETokenizer(files=files)
+    tokenizer = BPETokenizer(files=files, lang=lang)
     encoded = tokenizer.encode(input)
     decoded = tokenizer.decode(encoded)
     return encoded, decoded

@@ -3,7 +3,7 @@
 
 # TODO: 還有 SentencePiece 可用
 
-from typing import Any, List, Tuple, Union
+from typing import List, Tuple, Union
 
 from tokenizers import Encoding, Tokenizer
 from tokenizers.decoders import ByteLevel as ByteLevelDecoder
@@ -23,22 +23,19 @@ class BPETokenizer(object):
         vocab_size=25000,
         min_freq=5,
         lang="en",
-        files=None
+        files=[None, None]
     ) -> None:
         """
 
         Args:
-            vocab_size:
-            min_freq: minimun frequency
+            vocab_size: (int)
+            min_freq: minimum frequency
             lang: 
-            files: [List] [(path) "vocab.json", (path) "merge.txt"]
+            files: (List[str]) ["vocab.json", "merge.txt"]
         """
         super(BPETokenizer, self).__init__()
 
-        if files is not None:
-            self.tokenizer = Tokenizer.model(files)
-        else:
-            self.tokenizer = Tokenizer(BPE())
+        self.tokenizer = Tokenizer(BPE(files[0], files[1]))
 
         self.lang = lang
         self.trainer = BpeTrainer(
@@ -57,10 +54,11 @@ class BPETokenizer(object):
     def train(self, files=None) -> None:
 
         if files is None:
+            # files 長這樣：["test.txt", "train.txt", "valid.txt"]
             files = [
-                f"data/wikitext-103-raw/wiki.{split}.raw" for split in ["test", "train", "valid"]]
+                f"data/wikitext-103-raw/wiki.{split}.raw" for split in ["test", "train", "valid"]
+            ]
 
-        # files 長這樣：["test.txt", "train.txt", "valid.txt"]
         self.tokenizer.train(files, self.trainer)
 
     def save(self) -> None:
@@ -90,11 +88,11 @@ if __name__ == "__main__":
     tokenizer.train()
     tokenizer.save()
     encoded = tokenizer.encode("Bonjour, vous tous ! Comment ça va 😁 ?")
-    print(encoded.tokens)
     # Outputs:
     # ['Ġbon', 'j', 'our', ',', 'Ġv', 'ous', 'Ġto', 'us', 'Ġ!', 'Ġcomment',
     #  'ĠÃ', '§', 'a', 'Ġva', 'Ġ', 'ð', 'Ł', 'ĺ', 'ģ', 'Ġ?']
+    print(encoded.tokens)
     decoded = tokenizer.decode(encoded)
-    print(decoded)
     # Outputs:
     # bonjour, vous tous ! comment ça va 😁 ?
+    print(decoded)
