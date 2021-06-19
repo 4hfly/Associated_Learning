@@ -22,7 +22,8 @@ class LMProb():
     def get_prob(self, words, verbose=False):
         pad_words = ['<sos>'] + words + ['<eos>']
         indxs = [self.dictionary.getid(w) for w in pad_words]
-        input = Variable(torch.LongTensor([int(indxs[0])]).unsqueeze(0), volatile=True)
+        input = Variable(torch.LongTensor(
+            [int(indxs[0])]).unsqueeze(0), volatile=True)
 
         if verbose:
             print('words =', pad_words)
@@ -40,7 +41,8 @@ class LMProb():
 
         if verbose:
             for i in range(len(log_probs)):
-                print('  {} => {:d},\tlogP(w|s)={:.4f}'.format(pad_words[i+1], indxs[i+1], log_probs[i]))
+                print('  {} => {:d},\tlogP(w|s)={:.4f}'.format(
+                    pad_words[i+1], indxs[i+1], log_probs[i]))
             print('\n  => sum_prob = {:.4f}'.format(sum(log_probs)))
 
         return sum(log_probs) / math.sqrt(len(log_probs))

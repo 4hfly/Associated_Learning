@@ -9,7 +9,8 @@ from torch.autograd import Variable
 import data
 import model
 
-parser = argparse.ArgumentParser(description='PyTorch PennTreeBank RNN/LSTM Language Model')
+parser = argparse.ArgumentParser(
+    description='PyTorch PennTreeBank RNN/LSTM Language Model')
 parser.add_argument('--data', type=str, default='./data/pretrain/news.2012.en.shuffled.ids',
                     help='location of the data corpus')
 parser.add_argument('--emsize', type=int, default=200,
@@ -68,6 +69,7 @@ corpus = data.Corpus(args.data)
 # dependence of e. g. 'g' on 'f' can not be learned, but allows more efficient
 # batch processing.
 
+
 def batchify(data, bsz):
     # Work out how cleanly we can divide the dataset into bsz parts.
     nbatch = data.size(0) // bsz
@@ -79,6 +81,7 @@ def batchify(data, bsz):
         data = data.cuda()
     return data
 
+
 eval_batch_size = 10
 train_data = batchify(corpus.train, args.batch_size)
 # val_data = batchify(corpus.valid, eval_batch_size)
@@ -89,7 +92,8 @@ train_data = batchify(corpus.train, args.batch_size)
 ###############################################################################
 
 ntokens = 25000
-model = model.RNNModel(ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.tied)
+model = model.RNNModel(ntokens, args.emsize, args.nhid,
+                       args.nlayers, args.dropout, args.tied)
 if args.cuda:
     model.cuda()
 
@@ -98,6 +102,7 @@ criterion = nn.CrossEntropyLoss()
 ###############################################################################
 # Training code
 ###############################################################################
+
 
 def repackage_hidden(h):
     """Wraps hidden states in new Variables, to detach them from their history."""
@@ -146,7 +151,7 @@ def train():
     model.train()
     total_loss = 0
     start_time = time.time()
-    ntokens = 25000 # 強行設定25000 不過之後可以改成自動的
+    ntokens = 25000  # 強行設定25000 不過之後可以改成自動的
     hidden = model.init_hidden(args.batch_size)
     for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
         data, targets = get_batch(train_data, i)
@@ -161,7 +166,8 @@ def train():
         loss.backward()
         # print(loss.item())
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
-        torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip) # 這邊改成inplace，基本都是版本問題而已
+        torch.nn.utils.clip_grad_norm_(
+            model.parameters(), args.clip)  # 這邊改成inplace，基本都是版本問題而已
         for p in model.parameters():
             p.data.add_(p.grad, alpha=-lr)
 
@@ -170,16 +176,17 @@ def train():
         if batch % args.log_interval == 0 and batch > 0:
             # print(total_loss.item())
             # print(args.log_interval)
-            cur_loss = total_loss.item() / args.log_interval # 這邊也是小改成loss.item()
+            cur_loss = total_loss.item() / args.log_interval  # 這邊也是小改成loss.item()
             elapsed = time.time() - start_time
 
             # 這一行會print loss, epoch, lr, training_time, perplexity.
             print('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
-                    'loss {:5.2f} | ppl {:8.2f}'.format(
-                epoch, batch, len(train_data) // args.bptt, lr,
-                elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
+                  'loss {:5.2f} | ppl {:8.2f}'.format(
+                      epoch, batch, len(train_data) // args.bptt, lr,
+                      elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
             total_loss = 0
             start_time = time.time()
+
 
 # Loop over epochs.
 lr = args.lr
@@ -192,7 +199,7 @@ try:
         epoch_start_time = time.time()
         train()
         dp = args.save + f'.e{epoch}.pth'
-        torch.save(model.state_dict(), dp)  
+        torch.save(model.state_dict(), dp)
         # if epoch - lr_step > 9:
         #     lr = lr/4
         #     lr_step = epoch

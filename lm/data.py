@@ -5,14 +5,15 @@ from tokenizers import Tokenizer
 from tokenizers.models import BPE
 from tqdm import tqdm
 
+
 class Corpus(object):
     def __init__(self, path, ids=True):
         # self.dictionary = Dictionary()
-        self.ids = ids 
+        self.ids = ids
         self.tokenizer = Tokenizer(BPE())
-        self.tokenizer.model = BPE('data/vocab.json', 'data/merges.txt')
+        self.tokenizer.model = BPE(
+            'data/tokenizer/fr/vocab.json', 'data/tokenizer/fr/merges.txt')
         self.train = self.tokenize(path)
-        
 
     def tokenize(self, path):
         # assert os.path.exists(path)
@@ -43,12 +44,10 @@ class Corpus(object):
                     line = line.split()
                     all_data = all_data + line
             tokens = torch.LongTensor(len(all_data))
-            print('total tokens',len(all_data))
+            print('total tokens', len(all_data))
             for i, t in enumerate(all_data):
                 tokens[i] = int(t)
             return tokens
-            
 
 
 # C = Corpus('data/pretrain/test.en', False)
-
