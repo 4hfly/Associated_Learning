@@ -22,12 +22,12 @@ from tokenizers.trainers import BpeTrainer
 
 # We initialize our trainer, giving him the details about the vocabulary we want to generate
 trainer = BpeTrainer(special_tokens=["[PAD]","[UNK]","[SEP]"],vocab_size=25000, show_progress=True, initial_alphabet=ByteLevel.alphabet())
-tokenizer.train(files=["pretrain/news.2012.en.shuffled", "train/en-corpus/commoncrawl.fr-en.en", "train/en-corpus/europarl-v7.fr-en.en", "train/en-corpus/giga-fren.release2.fixed.en", "train/en-corpus/news-commentary-v9.fr-en.en", "train/en-corpus/undoc.2000.fr-en.en"], trainer=trainer)
+tokenizer.train(files=["pretrain/news.2012.fr.shuffled", "train/fr-corpus/commoncrawl.fr-en.fr", "train/fr-corpus/europarl-v7.fr-en.fr", "train/fr-corpus/giga-fren.release2.fixed.fr", "train/fr-corpus/news-commentary-v9.fr-en.fr", "train/fr-corpus/undoc.2000.fr-en.fr"], trainer=trainer)
 
 print("Trained vocab size: {}".format(tokenizer.get_vocab_size()))
 
 
-tokenizer.model.save('.')
+tokenizer.model.save('./fr/')
 
 # Let's tokenizer a simple input
 tokenizer.model = BPE('vocab.json', 'merges.txt')

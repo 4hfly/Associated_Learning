@@ -10,7 +10,7 @@ import data
 import model
 
 parser = argparse.ArgumentParser(description='PyTorch PennTreeBank RNN/LSTM Language Model')
-parser.add_argument('--data', type=str, default='./data/pretrain/pretrain.train.en.ids',
+parser.add_argument('--data', type=str, default='./data/pretrain/pretrain.train.fr.ids',
                     help='location of the data corpus')
 parser.add_argument('--emsize', type=int, default=200,
                     help='size of word embeddings')
@@ -212,8 +212,9 @@ try:
             torch.save(model.state_dict(), dp)
             best_val_loss = val_loss
         else:
-            if epoch > 15:
-                lr /= 4
+            lr /=4
+            # if epoch > 15:
+            #     lr /= 4
 
 
 except KeyboardInterrupt:
