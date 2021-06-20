@@ -1,13 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
-from tokenizers import decoders
 from tokenizer import BPETokenizer
-
-
-def al_loss():
-
-    pass
 
 
 def bpe(
