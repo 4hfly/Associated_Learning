@@ -7,8 +7,8 @@ import torch
 import torch.nn as nn
 
 
-from datasets import CoolDataset
-from models import CNN, Model, MLP, ResNet, VGG
+from dataset import CoolDataset
+from model import CNN, Model, MLP, ResNet, VGG
 
 
 class Trainer(object):
