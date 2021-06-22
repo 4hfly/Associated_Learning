@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from typing import Optional, Tuple
+
 import torch
 import torch.nn as nn
-
 from torch import Tensor
 from torch.nn.modules.module import Module
-
 
 CONFIG = {
     "loss_function": nn.MSELoss(),
     "hidden_size": 128,
     "num_layers": 1,
+    "batch_first": False,
     "batch_size": 1,
     "dropout": 0,
     "bidirectional": False,
@@ -27,7 +28,6 @@ class AutoEncoder(nn.Module):
 
     #       _t: g(y) = encoded y
     # _t_prime: h(g(y)) = ae output
-    y: Tensor
     _t: Tensor
     _t_prime: Tensor
 
@@ -35,7 +35,6 @@ class AutoEncoder(nn.Module):
     # 也許可以嘗試其他類型的，所以這部分就標記成NOTE。
     def __init__(
         self,
-        g: Module,
         input_size: int,
         hidden_size: int
     ) -> None:
@@ -48,31 +47,23 @@ class AutoEncoder(nn.Module):
         """
         super(AutoEncoder, self).__init__()
 
-        # g function
-        self.encoder = g
         # h function
         self.decoder = nn.Sequential(
             nn.Linear(hidden_size, input_size),
             nn.Sigmoid()
         )
-        self.criterion = CONFIG["loss_function"]
 
-    def forward(self, y):
+    def forward(self, t):
 
-        self.y = y
-        self._t = self.encoder(self.y)
+        self._t = t
         self._t_prime = self.decoder(self._t)
 
-        return self._t, self._t_prime
-
-    def loss(self):
-        """should never call this function."""
-
-        return self.criterion(self._t_prime, self.y)
+        return self._t_prime
 
 
 class ALComponent(nn.Module):
 
+    y: Tensor
     _s: Tensor
     _t: Tensor
     _s_prime: Tensor
@@ -85,6 +76,7 @@ class ALComponent(nn.Module):
         output_size: int,
         hidden_size: int,
         num_layers: int = CONFIG["num_layers"],
+        batch_first: bool = CONFIG["batch_first"],
         batch_size: int = CONFIG["batch_size"],
         dropout: float = CONFIG["dropout"],
         bidirectional: bool = CONFIG["bidirectional"],
@@ -104,6 +96,7 @@ class ALComponent(nn.Module):
                 input_size,
                 hidden_size,
                 num_layers,
+                batch_first=batch_first,
                 dropout=dropout,
                 bidirectional=bidirectional
             )
@@ -111,6 +104,7 @@ class ALComponent(nn.Module):
                 output_size,
                 hidden_size,
                 num_layers,
+                batch_first=batch_first,
                 dropout=dropout,
                 bidirectional=bidirectional
             )
@@ -121,21 +115,24 @@ class ALComponent(nn.Module):
             nn.Linear(input_size, hidden_size),
             nn.Sigmoid()
         )
+
         self.batch_size = batch_size
-        self.ae = AutoEncoder(self.g, output_size, hidden_size)
+        self.ae = AutoEncoder(output_size, hidden_size)
         self.criterion = CONFIG["loss_function"]
 
     def forward(self, x, y):
 
+        self.y = y
         self._s = self.f(x)
         self._s_prime = self.b(self._s)
-        self._t, self._t_prime = self.ae(y)
+        self._t = self.g(y)
+        self._t_prime = self.ae(self._t)
 
         return self._s, self._t_prime
 
     def loss(self):
 
-        return self.criterion(self._s_prime, self._t) + self.ae.loss()
+        return self.criterion(self._s_prime, self._t) + self.criterion(self._t_prime, self.y)
 
 
 class Linear_AL(ALComponent):
@@ -147,13 +144,33 @@ class Linear_AL(ALComponent):
 
 class LSTM_AL(ALComponent):
 
+    h_nx: Tensor
+    h_ny: Tensor
+
     def __init__(self, *args, **kwargs) -> None:
 
         super(LSTM_AL, self).__init__("LSTM", *args, **kwargs)
 
-    def forward(self, input, hx=None):
+    def forward(
+        self,
+        input: Tensor,
+        output: Tensor,
+        hx: Optional[Tuple[Tensor, Tensor]] = None,
+    ):
+        """https://github.com/pytorch/pytorch/blob/700df82881786f3560826f194aa9e04beeaa3fd8/torch/nn/modules/rnn.py#L659"""
 
-        return
+        # TODO: determine the initial hidden state and the cell state of output.
+        self.y = output
+        self._s, (self.h_nx, c_nx) = self.f(input, hx)
+        self._t, (self.h_ny, c_ny) = self.g(output, None)
+        self._t_prime = self.ae(self._t)
+
+        return self._s, self._t_prime
+
+    def loss(self):
+
+        # loss function for seq2seq model
+        return self.criterion(self.h_nx, self.h_ny) + self.criterion(self._t_prime, self.y)
 
 
 class ResNet_AL(ALComponent):
@@ -188,10 +205,10 @@ class MLP_AL(nn.Module):
 
 def test():
 
-    inputs = torch.randn(8)
-    outputs = torch.randn(8)
-    model = Linear_AL(len(inputs), len(outputs), 2)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    inputs = torch.randn(8, 1, 4, requires_grad=True)
+    outputs = torch.randn(8, 1, 4, requires_grad=True)
+    model = LSTM_AL(4, 4, 2)
+    optimizer = torch.optim.SGD(model.parameters(), lr=1e-4)
 
     epochs = 5
     for _ in range(epochs):
@@ -203,9 +220,9 @@ def test():
         loss.backward()
         optimizer.step()
 
-        print(inputs)
-        print(outputs)
-        print(x_out, y_out)
+        # print(inputs.shape)
+        # print(outputs.shape)
+        print(x_out.shape, y_out.shape)
         print(loss.item())
 
 
