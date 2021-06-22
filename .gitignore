@@ -4,3 +4,5 @@ lm/data/pretrain
 lm/data/train
 lm/data/test
 lm/data/valid
+lm/model_ckp
+nmt/data/
