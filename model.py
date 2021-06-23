@@ -5,7 +5,7 @@ from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 from torch import Tensor
-from torch.nn.modules.module import Module
+from torch.nn.modules.rnn import GRU
 
 CONFIG = {
     "loss_function": nn.MSELoss(),
@@ -144,8 +144,8 @@ class Linear_AL(ALComponent):
 
 class LSTM_AL(ALComponent):
 
-    h_nx: Tensor
-    h_ny: Tensor
+    _h_nx: Tensor
+    _h_ny: Tensor
 
     def __init__(self, *args, **kwargs) -> None:
 
@@ -161,8 +161,8 @@ class LSTM_AL(ALComponent):
 
         # TODO: determine the initial hidden state and the cell state of output.
         self.y = output
-        self._s, (self.h_nx, c_nx) = self.f(input, hx)
-        self._t, (self.h_ny, c_ny) = self.g(output, None)
+        self._s, (self._h_nx, c_nx) = self.f(input, hx)
+        self._t, (self._h_ny, c_ny) = self.g(output, None)
         self._t_prime = self.ae(self._t)
 
         return self._s, self._t_prime
@@ -170,7 +170,36 @@ class LSTM_AL(ALComponent):
     def loss(self):
 
         # loss function for seq2seq model
-        return self.criterion(self.h_nx, self.h_ny) + self.criterion(self._t_prime, self.y)
+        return self.criterion(self._h_nx, self._h_ny) + self.criterion(self._t_prime, self.y)
+
+
+class GRU_AL(ALComponent):
+
+    _h_nx: Tensor
+    _h_ny: Tensor
+
+    def __init__(self, *args, **kwargs) -> None:
+
+        super(GRU_AL, self).__init__("GRU", *args, **kwargs)
+
+    def forward(
+        self,
+        input: Tensor,
+        output: Tensor,
+        hx: Optional[Tuple[Tensor, Tensor]] = None,
+    ):
+
+        self.y = output
+        self._s, self._h_nx = self.f(input, hx)
+        self._t, self._h_ny = self.g(output, None)
+        self._t_prime = self.ae(self._t)
+
+        return self._s, self._t_prime
+
+    def loss(self):
+
+        # loss function for seq2seq model
+        return self.criterion(self._h_nx, self._h_ny) + self.criterion(self._t_prime, self.y)
 
 
 class ResNet_AL(ALComponent):
