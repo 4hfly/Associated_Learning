@@ -19,9 +19,15 @@ from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
 from nltk.translate.bleu_score import corpus_bleu
 
+from utils import word2id, NMTData, collate, id2word
 from util import read_corpus, data_iter
 from vocab import Vocab, VocabEntry
 
+from tokenizers import Tokenizer
+from tokenizers.models import BPE
+from tokenizers.normalizers import Lowercase, NFKC, Sequence
+from tokenizers.pre_tokenizers import ByteLevel
+from tokenizers.decoders import ByteLevel as ByteLevelDecoder
 
 def init_config():
     parser = argparse.ArgumentParser()
@@ -73,7 +79,8 @@ def init_config():
 
     parser.add_argument('--smooth_bleu', action='store_true', default=False,
                         help='smooth sentence level BLEU score.')
-
+    parser.add_argument('--src-tkr', default='./data/tkr/en/')
+    parser.add_argument('--tgt-tkr', default='./data/tkr/fr/')
     #TODO: greedy sampling is still buggy!
     parser.add_argument('--sample_method', default='random', choices=['random', 'greedy'])
 
@@ -100,12 +107,6 @@ def input_transpose(sents, pad_token):
 
     return sents_t, masks
 
-
-def word2id(sents, vocab):
-    if type(sents[0]) == list:
-        return [[vocab[w] for w in s] for s in sents]
-    else:
-        return [vocab[w] for w in sents]
 
 
 def tensor_transform(linear, X):
@@ -469,7 +470,7 @@ def to_input_variable(sents, tkr, cuda=False, is_test=False):
     """
 
     word_ids = word2id(sents, tkr)
-    sents_t, masks = input_transpose(word_ids, vocab['<pad>'])
+    sents_t, masks = input_transpose(word_ids, 0)
 
     sents_var = Variable(torch.LongTensor(sents_t), volatile=is_test, requires_grad=False)
     if cuda:
@@ -510,12 +511,28 @@ def init_training(args):
         vocab = params['vocab']
         opt = params['args']
         state_dict = params['state_dict']
-        model = NMT(opt, vocab)
+        tkr = Tokenizer(BPE())
+        tkr.normalizer = Sequence([
+            NFKC(),
+            Lowercase()
+            ])
+        tkr.pre_tokenizer = ByteLevel()
+        tkr.decoder = ByteLevelDecoder()
+        tkr.model = BPE(args.src_tkr+'vocab.json', args.src_tkr+'merges.txt')
+        model = NMT(opt, tkr)
         model.load_state_dict(state_dict)
         model.train()
     else:
-        vocab = torch.load(args.vocab)
-        model = NMT(args, vocab)
+
+        tkr = Tokenizer(BPE())
+        tkr.normalizer = Sequence([
+            NFKC(),
+            Lowercase()
+            ])
+        tkr.pre_tokenizer = ByteLevel()
+        tkr.decoder = ByteLevelDecoder()
+        tkr.model = BPE(args.src_tkr+'vocab.json', args.src_tkr+'merges.txt')
+        model = NMT(args, tkr)
         model.train()
 
         if args.uniform_init:
@@ -523,8 +540,8 @@ def init_training(args):
             for p in model.parameters():
                 p.data.uniform_(-args.uniform_init, args.uniform_init)
 
-    vocab_mask = torch.ones(len(vocab.tgt))
-    vocab_mask[vocab.tgt['<pad>']] = 0
+    vocab_mask = torch.ones(25000)
+    vocab_mask[0] = 0
     nll_loss = nn.NLLLoss(weight=vocab_mask, size_average=False)
     cross_entropy_loss = nn.CrossEntropyLoss(weight=vocab_mask, size_average=False)
 
@@ -535,20 +552,41 @@ def init_training(args):
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
-    return vocab, model, optimizer, nll_loss, cross_entropy_loss
+    return tkr, model, optimizer, nll_loss, cross_entropy_loss
 
+
+def get_tkrs(args):
+
+    src_tkr = Tokenizer(BPE())
+    src_tkr.normalizer = Sequence([
+        NFKC(),
+        Lowercase()
+        ])
+    src_tkr.pre_tokenizer = ByteLevel()
+    src_tkr.decoder = ByteLevelDecoder()
+    src_tkr.model = BPE(args.src_tkr+'vocab.json', args.src_tkr+'merges.txt')
+
+    tgt_tkr = Tokenizer(BPE())
+    tgt_tkr.normalizer = Sequence([
+        NFKC(),
+        Lowercase()
+        ])
+    tgt_tkr.pre_tokenizer = ByteLevel()
+    tgt_tkr.decoder = ByteLevelDecoder()
+    tgt_tkr.model = BPE(args.tgt_tkr+'vocab.json', args.tgt_tkr+'merges.txt')
+    return src_tkr, tgt_tkr
 
 def train(args):
-    train_data_src = read_corpus(args.train_src, source='src')
-    train_data_tgt = read_corpus(args.train_tgt, source='tgt')
 
-    dev_data_src = read_corpus(args.dev_src, source='src')
-    dev_data_tgt = read_corpus(args.dev_tgt, source='tgt')
+    en_tkr, fr_tkr = get_tkrs(args)
+    
+    trainset = NMTData(args.en_data, args.fr_data, en_tkr, fr_tkr)
+    train_data = DataLoader(trainset, batch_size=args.batch_size, collate_fn=collate)
 
-    train_data = list(zip(train_data_src, train_data_tgt))
-    dev_data = list(zip(dev_data_src, dev_data_tgt))
+    devset = NMTData(args.en_dev_data, args.fr_dev_data, en_tkr, fr_tkr)
+    dev_data = DataLoader(devset, batch_size=args.batch_size, collate_fn=collate)
 
-    vocab, model, optimizer, nll_loss, cross_entropy_loss = init_training(args)
+    tkr, model, optimizer, nll_loss, cross_entropy_loss = init_training(args)
 
     train_iter = patience = cum_loss = report_loss = cum_tgt_words = report_tgt_words = 0
     cum_examples = cum_batches = report_examples = epoch = valid_num = best_model_iter = 0
@@ -568,13 +606,16 @@ def train(args):
         epoch += 1
         print('start of epoch {:d}'.format(epoch))
 
-        for src_sents, tgt_sents in data_iter(train_data, batch_size=args.batch_size):
+        train_bar = tqdm(train_data, total=len(train_data))
+
+        for src_sents_var, tgt_sents_var in train_bar:
             train_iter += 1
 
-            src_sents_var = to_input_variable(src_sents, vocab.src, cuda=args.cuda)
-            tgt_sents_var = to_input_variable(tgt_sents, vocab.tgt, cuda=args.cuda)
+            if args.cuda:
+                src_sents_var = src_sents_var.cuda()
+                tgt_sents_var = tgt_sents_var.cuda()
 
-            batch_size = len(src_sents)
+            batch_size = src_sents_var.size(0)
             src_sents_len = [len(s) for s in src_sents]
             pred_tgt_word_num = sum(len(s[1:]) for s in tgt_sents) # omitting leading `<s>`
 
