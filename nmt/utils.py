@@ -1,7 +1,9 @@
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
+import torch.nn.functional as F
 
 class NMTData(Dataset):
     def __init__(self, en_data, fr_data, en_tkr, fr_tkr):
@@ -44,3 +46,37 @@ def id2word(sents, tkr):
     else:
         return tkr.decode(s).ids
 
+class LabelSmoothingLoss(nn.Module):
+    """
+    label smoothing
+    Code adapted from OpenNMT-py
+    """
+    def __init__(self, label_smoothing, tgt_vocab_size, padding_idx=0):
+        assert 0.0 < label_smoothing <= 1.0
+        self.padding_idx = padding_idx
+        super(LabelSmoothingLoss, self).__init__()
+
+        smoothing_value = label_smoothing / (tgt_vocab_size - 2)  # -1 for pad, -1 for gold-standard word
+        one_hot = torch.full((tgt_vocab_size,), smoothing_value)
+        one_hot[self.padding_idx] = 0
+        self.register_buffer('one_hot', one_hot.unsqueeze(0))
+
+        self.confidence = 1.0 - label_smoothing
+
+    def forward(self, output, target):
+        """
+        output (FloatTensor): batch_size x tgt_vocab_size
+        target (LongTensor): batch_size
+        """
+        # (batch_size, tgt_vocab_size)
+        true_dist = self.one_hot.repeat(target.size(0), 1)
+
+        # fill in gold-standard word position with confidence value
+        true_dist.scatter_(1, target.unsqueeze(-1), self.confidence)
+
+        # fill padded entries with zeros
+        true_dist.masked_fill_((target == self.padding_idx).unsqueeze(-1), 0.)
+
+        loss = -F.kl_div(output, true_dist, reduction='none').sum(-1)
+
+        return loss
