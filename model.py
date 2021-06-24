@@ -5,7 +5,6 @@ from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 from torch import Tensor
-from torch.nn.modules.rnn import GRU
 
 CONFIG = {
     "loss_function": nn.MSELoss(),
@@ -128,7 +127,7 @@ class ALComponent(nn.Module):
         self._t = self.g(y)
         self._t_prime = self.ae(self._t)
 
-        return self._s, self._t_prime
+        return self._s, self._t
 
     def loss(self):
 
@@ -165,7 +164,7 @@ class LSTM_AL(ALComponent):
         self._t, (self._h_ny, c_ny) = self.g(output, None)
         self._t_prime = self.ae(self._t)
 
-        return self._s, self._t_prime
+        return self._s, self._t
 
     def loss(self):
 
@@ -194,7 +193,7 @@ class GRU_AL(ALComponent):
         self._t, self._h_ny = self.g(output, None)
         self._t_prime = self.ae(self._t)
 
-        return self._s, self._t_prime
+        return self._s, self._t
 
     def loss(self):
 
@@ -234,8 +233,8 @@ class MLP_AL(nn.Module):
 
 def test():
 
-    inputs = torch.randn(8, 1, 4, requires_grad=True)
-    outputs = torch.randn(8, 1, 4, requires_grad=True)
+    inputs = torch.randn(8, 1, 4)
+    outputs = torch.randn(8, 1, 40)
     model = LSTM_AL(4, 4, 2)
     optimizer = torch.optim.SGD(model.parameters(), lr=1e-4)
 
