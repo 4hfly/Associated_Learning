@@ -40,6 +40,7 @@ import math
 import pickle
 import sys
 import time
+import json
 from collections import namedtuple
 
 import numpy as np
@@ -64,8 +65,6 @@ from tokenizers.models import BPE
 from tokenizers.normalizers import Lowercase, NFKC, Sequence
 from tokenizers.pre_tokenizers import ByteLevel
 from tokenizers.decoders import ByteLevel as ByteLevelDecoder
-
-
 
 Hypothesis = namedtuple('Hypothesis', ['value', 'score'])
 
@@ -545,47 +544,74 @@ def compute_corpus_level_bleu_score(references: List[List[str]], hypotheses: Lis
     return bleu_score
 
 
+def get_tkrs(args):
+    
+    src_tkr = Tokenizer(BPE())
+    src_tkr.normalizer = Sequence([
+        NFKC(),
+        Lowercase()
+        ])
+    src_tkr.pre_tokenizer = ByteLevel()
+    src_tkr.decoder = ByteLevelDecoder()
+    src_tkr.model = BPE(args.src_tkr+'vocab.json', args.src_tkr+'merges.txt')
+
+    tgt_tkr = Tokenizer(BPE())
+    tgt_tkr.normalizer = Sequence([
+        NFKC(),
+        Lowercase()
+        ])
+    tgt_tkr.pre_tokenizer = ByteLevel()
+    tgt_tkr.decoder = ByteLevelDecoder()
+    tgt_tkr.model = BPE(args.tgt_tkr+'vocab.json', args.tgt_tkr+'merges.txt')
+    return src_tkr, tgt_tkr
+
+
 def train(args: Dict):
-    train_data_src = read_corpus(args['--train-src'], source='src')
-    train_data_tgt = read_corpus(args['--train-tgt'], source='tgt')
 
-    dev_data_src = read_corpus(args['--dev-src'], source='src')
-    dev_data_tgt = read_corpus(args['--dev-tgt'], source='tgt')
+    en_tkr, fr_tkr = get_tkrs(args)
 
-    train_data = list(zip(train_data_src, train_data_tgt))
-    dev_data = list(zip(dev_data_src, dev_data_tgt))
+    if args["src"] == "en":
+        src_tkr=en_tkr
+    else:
+        src_tkr=fr_tkr
 
-    train_batch_size = int(args['--batch-size'])
-    clip_grad = float(args['--clip-grad'])
-    valid_niter = int(args['--valid-niter'])
-    log_every = int(args['--log-every'])
+    trainset = NMTData(args.en_data, args.fr_data, en_tkr, fr_tkr)
+    train_data = DataLoader(trainset, batch_size=args.batch_size, collate_fn=collate, shuffle=True)
+    train_bar = tqdm(enumerate(train_data), total=len(train_data))
+
+    devset = NMTData(args.en_dev_data, args.fr_dev_data, en_tkr, fr_tkr)
+    dev_data = DataLoader(devset, batch_size=args.batch_size, collate_fn=collate)
+    dev_bar = tqdm(enumerate(dev_data), total=len(dev_data))
+
+    train_batch_size = int(args['batch-size'])
+    clip_grad = float(args['clip_grad'])
+    valid_niter = int(args['valid_niter'])
+    log_every = int(args['log_every'])
     model_save_path = args['--save-to']
 
-    vocab = Vocab.load(args['--vocab'])
-
-    model = NMT(embed_size=int(args['--embed-size']),
-                hidden_size=int(args['--hidden-size']),
-                dropout_rate=float(args['--dropout']),
-                input_feed=args['--input-feed'],
-                label_smoothing=float(args['--label-smoothing']),
-                vocab=vocab)
+    model = NMT(embed_size=int(args['embed_size']),
+                hidden_size=int(args['hidden_size']),
+                dropout_rate=float(args['dropout']),
+                input_feed=args['input_feed'],
+                label_smoothing=float(args['label_smoothing']),
+                tkr=src_tkr)
     model.train()
 
-    uniform_init = float(args['--uniform-init'])
+    uniform_init = float(args['uniform_init'])
     if np.abs(uniform_init) > 0.:
         print('uniformly initialize parameters [-%f, +%f]' % (uniform_init, uniform_init), file=sys.stderr)
         for p in model.parameters():
             p.data.uniform_(-uniform_init, uniform_init)
 
-    vocab_mask = torch.ones(len(vocab.tgt))
-    vocab_mask[vocab.tgt['<pad>']] = 0
+    vocab_mask = torch.ones(25000)
+    vocab_mask[0] = 0
 
-    device = torch.device("cuda:0" if args['--cuda'] else "cpu")
+    device = torch.device("cuda:0" if args['cuda'] else "cpu")
     print('use device: %s' % device, file=sys.stderr)
 
     model = model.to(device)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=float(args['--lr']))
+    optimizer = torch.optim.Adam(model.parameters(), lr=float(args['lr']))
 
     num_trial = 0
     train_iter = patience = cum_loss = report_loss = cum_tgt_words = report_tgt_words = 0
@@ -597,12 +623,14 @@ def train(args: Dict):
     while True:
         epoch += 1
 
-        for src_sents, tgt_sents in batch_iter(train_data, batch_size=train_batch_size, shuffle=True):
+        for src_sents, tgt_sents in train_bar:
             train_iter += 1
 
             optimizer.zero_grad()
 
-            batch_size = len(src_sents)
+            batch_size = src_sents.size(0)
+            src_sents = src_sents.to(device)
+            tgt_sents = tgt_sents.to(device)
 
             # (batch_size)
             example_losses = -model(src_sents, tgt_sents)
@@ -753,12 +781,13 @@ def decode(args: Dict[str, str]):
 
 
 def main():
-    args = docopt(__doc__)
+    with open(sys.argv[1]) as f:
+        args = json.load(f)
 
     # seed the random number generators
-    seed = int(args['--seed'])
+    seed = int(args['seed'])
     torch.manual_seed(seed)
-    if args['--cuda']:
+    if args['cuda']:
         torch.cuda.manual_seed(seed)
     np.random.seed(seed * 13 // 7)
 
