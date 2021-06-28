@@ -10,8 +10,8 @@ CONFIG = {
     "loss_function": nn.MSELoss(),
     "hidden_size": 128,
     "num_layers": 1,
+    "bias": True,
     "batch_first": False,
-    "batch_size": 1,
     "dropout": 0,
     "bidirectional": False,
 }
@@ -19,45 +19,10 @@ CONFIG = {
 MODELS = {
     "Linear": nn.Linear,
     "LSTM": nn.LSTM,
+    "LSTMCell": nn.LSTMCell,
     "GRU": nn.GRU,
+    "GRUCell": nn.GRUCell
 }
-
-
-class AutoEncoder(nn.Module):
-
-    #       _t: g(y) = encoded y
-    # _t_prime: h(g(y)) = ae output
-    _t: Tensor
-    _t_prime: Tensor
-
-    # NOTE: 我不曉得用其他類型的 AE 會有什麼差異，
-    # 也許可以嘗試其他類型的，所以這部分就標記成NOTE。
-    def __init__(
-        self,
-        input_size: int,
-        hidden_size: int
-    ) -> None:
-        r"""
-
-        Args:
-            mode: for g function
-            input_size: y_size
-            hidden_size:
-        """
-        super(AutoEncoder, self).__init__()
-
-        # h function
-        self.decoder = nn.Sequential(
-            nn.Linear(hidden_size, input_size),
-            nn.Sigmoid()
-        )
-
-    def forward(self, t):
-
-        self._t = t
-        self._t_prime = self.decoder(self._t)
-
-        return self._t_prime
 
 
 class ALComponent(nn.Module):
@@ -75,26 +40,24 @@ class ALComponent(nn.Module):
         output_size: int,
         hidden_size: int,
         num_layers: int = CONFIG["num_layers"],
+        bias: bool = CONFIG["bias"],
         batch_first: bool = CONFIG["batch_first"],
-        batch_size: int = CONFIG["batch_size"],
         dropout: float = CONFIG["dropout"],
         bidirectional: bool = CONFIG["bidirectional"],
     ) -> None:
 
         super(ALComponent, self).__init__()
         # f function
-        # TODO: 這麼寫主要是為了擴充性，假如各種網路拆開來寫不使用繼承，
-        # 那麼 f_function 就不需要這麼多 if else。
         if mode == "Linear":
             self.f = MODELS[mode](input_size, input_size)
             self.g = MODELS[mode](output_size, hidden_size)
 
-        # NOTE: Pytorch 自己會把 dropout 轉成 float。
         elif mode == "LSTM" or mode == "GRU":
             self.f = MODELS[mode](
                 input_size,
                 hidden_size,
                 num_layers,
+                bias=bias,
                 batch_first=batch_first,
                 dropout=dropout,
                 bidirectional=bidirectional
@@ -103,20 +66,22 @@ class ALComponent(nn.Module):
                 output_size,
                 hidden_size,
                 num_layers,
+                bias=bias,
                 batch_first=batch_first,
                 dropout=dropout,
                 bidirectional=bidirectional
             )
 
         # bridge function
-        # TODO: 不確定這個 bridge 該如何設計。
         self.b = nn.Sequential(
             nn.Linear(input_size, hidden_size),
             nn.Sigmoid()
         )
 
-        self.batch_size = batch_size
-        self.ae = AutoEncoder(output_size, hidden_size)
+        self.decoder = nn.Sequential(
+            nn.Linear(hidden_size, output_size),
+            nn.Sigmoid()
+        )
         self.criterion = CONFIG["loss_function"]
 
     def forward(self, x, y):
@@ -125,46 +90,56 @@ class ALComponent(nn.Module):
         self._s = self.f(x)
         self._s_prime = self.b(self._s)
         self._t = self.g(y)
-        self._t_prime = self.ae(self._t)
+        self._t_prime = self.decoder(self._t)
 
-        return self._s, self._t
+        return self._s.detach(), self._t.detach()
 
     def loss(self):
 
         return self.criterion(self._s_prime, self._t) + self.criterion(self._t_prime, self.y)
 
 
-class Linear_AL(ALComponent):
+class LinearAL(ALComponent):
 
     def __init__(self, *args, **kwargs) -> None:
 
-        super(Linear_AL, self).__init__("Linear", *args, **kwargs)
+        super(LinearAL, self).__init__("Linear", *args, **kwargs)
 
 
-class LSTM_AL(ALComponent):
+class LSTMAL(ALComponent):
 
     _h_nx: Tensor
     _h_ny: Tensor
 
     def __init__(self, *args, **kwargs) -> None:
 
-        super(LSTM_AL, self).__init__("LSTM", *args, **kwargs)
+        super(LSTMAL, self).__init__("LSTM", *args, **kwargs)
 
     def forward(
         self,
         input: Tensor,
         output: Tensor,
         hx: Optional[Tuple[Tensor, Tensor]] = None,
+        hy: Optional[Tuple[Tensor, Tensor]] = None
     ):
-        """https://github.com/pytorch/pytorch/blob/700df82881786f3560826f194aa9e04beeaa3fd8/torch/nn/modules/rnn.py#L659"""
+        """https://github.com/pytorch/pytorch/blob/700df82881786f3560826f194aa9e04beeaa3fd8/torch/nn/modules/rnn.py#L659
 
-        # TODO: determine the initial hidden state and the cell state of output.
+        Args:
+            input:
+            output:
+            hx:
+            hy:
+
+        Returns:
+
+        """
+
         self.y = output
         self._s, (self._h_nx, c_nx) = self.f(input, hx)
-        self._t, (self._h_ny, c_ny) = self.g(output, None)
-        self._t_prime = self.ae(self._t)
+        self._t, (self._h_ny, c_ny) = self.g(output, hy)
+        self._t_prime = self.decoder(self._t)
 
-        return self._s, self._t
+        return self._s.detach(), (self._h_nx, c_nx), self._t.detach(), (self._h_ny, c_ny)
 
     def loss(self):
 
@@ -172,28 +147,29 @@ class LSTM_AL(ALComponent):
         return self.criterion(self._h_nx, self._h_ny) + self.criterion(self._t_prime, self.y)
 
 
-class GRU_AL(ALComponent):
+class GRUAL(ALComponent):
 
     _h_nx: Tensor
     _h_ny: Tensor
 
     def __init__(self, *args, **kwargs) -> None:
 
-        super(GRU_AL, self).__init__("GRU", *args, **kwargs)
+        super(GRUAL, self).__init__("GRU", *args, **kwargs)
 
     def forward(
         self,
         input: Tensor,
         output: Tensor,
         hx: Optional[Tuple[Tensor, Tensor]] = None,
+        hy: Optional[Tuple[Tensor, Tensor]] = None
     ):
 
         self.y = output
         self._s, self._h_nx = self.f(input, hx)
-        self._t, self._h_ny = self.g(output, None)
-        self._t_prime = self.ae(self._t)
+        self._t, self._h_ny = self.g(output, hy)
+        self._t_prime = self.decoder(self._t)
 
-        return self._s, self._t
+        return self._s.detach(), self._h_nx, self._t.detach(), self._h_ny
 
     def loss(self):
 
@@ -201,41 +177,116 @@ class GRU_AL(ALComponent):
         return self.criterion(self._h_nx, self._h_ny) + self.criterion(self._t_prime, self.y)
 
 
-class ResNet_AL(ALComponent):
+class ALComponentCell(nn.Module):
+
+    _h_nx: Tensor
+    _h_ny: Tensor
+
+    def __init__(
+        self,
+        mode: str,
+        input_size: int,
+        output_size: int,
+        hidden_size: int,
+        bias: bool = CONFIG["bias"]
+    ) -> None:
+
+        super(ALComponent, self).__init__()
+        # f function
+        self.f = MODELS[mode](
+            input_size,
+            hidden_size,
+            bias=bias,
+        )
+        self.g = MODELS[mode](
+            output_size,
+            hidden_size,
+            bias=bias,
+        )
+
+        # bridge function
+        self.b = nn.Sequential(
+            nn.Linear(input_size, hidden_size),
+            nn.Sigmoid()
+        )
+
+    def forward(
+        self,
+        input: Tensor,
+        output: Tensor,
+        hx: Optional[Tuple[Tensor, Tensor]] = None,
+        hy: Optional[Tuple[Tensor, Tensor]] = None
+    ):
+        self.y = output
+        self._h_nx = self.f(input, hx)
+        self._h_ny = self.g(output, hy)
+
+        return self._h_nx, self._h_ny
+
+
+class LSTMCellAL(ALComponentCell):
+
+    _c_nx: Tensor
+    _c_ny: Tensor
+
+    def __init__(self, *args, **kwargs) -> None:
+        super(LSTMCellAL, self).__init__("LSTMCell", *args, **kwargs)
+
+    def forward(
+        self,
+        input: Tensor,
+        output: Tensor,
+        hx: Optional[Tuple[Tensor, Tensor]] = None,
+        hy: Optional[Tuple[Tensor, Tensor]] = None
+    ):
+        self.y = output
+        (self._h_nx, self._c_nx) = self.f(input, hx)
+        (self._h_ny, self._c_ny) = self.g(output, hy)
+
+        return (self._h_nx, self._c_nx), (self._h_ny, self._c_ny)
+
+
+class GRUCellAL(ALComponentCell):
+
+    def __init__(self, *args, **kwargs) -> None:
+        super(GRUCellAL, self).__init__("LSTMCell", *args, **kwargs)
+
+
+class ResNetAL(ALComponent):
     """https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py"""
 
     def __init__(self, *args, **kwargs) -> None:
 
-        super(ResNet_AL, self).__init__("ResNet_AL", *args, **kwargs)
+        super(ResNetAL, self).__init__("ResNet", *args, **kwargs)
 
 
-class VGG_AL(ALComponent):
+class VGGAL(ALComponent):
     """https://github.com/pytorch/vision/blob/master/torchvision/models/vgg.py"""
 
     def __init__(self, *args, **kwargs) -> None:
 
-        super(VGG_AL, self).__init__("VGG_AL", *args, **kwargs)
+        super(VGGAL, self).__init__("VGG", *args, **kwargs)
 
 
-class CNN_AL(nn.Module):
-
-    def __init__(self, *args, **kwargs) -> None:
-
-        super(CNN_AL, self).__init__("CNN_AL", *args, **kwargs)
-
-
-class MLP_AL(nn.Module):
+class CNNAL(nn.Module):
 
     def __init__(self, *args, **kwargs) -> None:
 
-        super(MLP_AL, self).__init__("MLP_AL", *args, **kwargs)
+        super(CNNAL, self).__init__("CNN", *args, **kwargs)
+
+
+class MLPAL(nn.Module):
+
+    def __init__(self, *args, **kwargs) -> None:
+
+        super(MLPAL, self).__init__("MLP", *args, **kwargs)
 
 
 def test():
 
     inputs = torch.randn(8, 1, 4)
     outputs = torch.randn(8, 1, 40)
-    model = LSTM_AL(4, 4, 2)
+    model = LSTMAL(4, 4, 2)
     optimizer = torch.optim.SGD(model.parameters(), lr=1e-4)
 
     epochs = 5
