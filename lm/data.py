@@ -10,9 +10,9 @@ class Corpus(object):
         # self.dictionary = Dictionary()
         self.ids = ids 
         self.tokenizer = Tokenizer(BPE())
-        self.tokenizer.model = BPE('data/fr/vocab.json', 'data/fr/merges.txt')
+        self.tokenizer.model = BPE('data/en/vocab.json', 'data/en/merges.txt')
         self.train = self.tokenize(path)
-        self.valid = self.tokenize('data/pretrain/pretrain.valid.fr.ids') 
+        self.valid = self.tokenize('data/pretrain/pretrain.valid.en.ids') 
 
     def tokenize(self, path):
         # assert os.path.exists(path)
@@ -22,7 +22,7 @@ class Corpus(object):
             with open(path, 'r') as f:
                 lines = f.readlines()
                 for line in tqdm(lines, total=len(lines)):
-                    line = line + "[SEP]"
+                    line = "[SOS]" +line + "[EOS]"
                     encoding = self.tokenizer.encode(line)
                     ids = encoding.ids
                     all_data.append(torch.LongTensor(ids))
@@ -50,5 +50,5 @@ class Corpus(object):
             
 
 
-# C = Corpus('data/pretrain/pretrain.train.fr', False)
+# C = Corpus('data/pretrain/pretrain.train.en', False)
 

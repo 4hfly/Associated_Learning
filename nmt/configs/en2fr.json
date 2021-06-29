@@ -1,14 +1,18 @@
 {
     "src":"en",
     "src_tkr":"data/tkr/en/",
-    "tgt_tkr":"data/tkr/fr",
-    "src_data_train":"data/train/",
-    "src_data_dev":"data/valid/",
-    "src_data_test":"data/test",
+    "tgt_tkr":"data/tkr/fr/",
+    "en_data_train":"data/train/en-corpus/train.data.en.test",
+    "en_data_dev":"data/valid/valid.en",
+    "en_data_test":"data/test/test.en",
+    "fr_data_train":"data/train/fr-corpus/train.data.fr.test",
+    "fr_data_dev":"data/valid/valid.fr",
+    "fr_data_test":"data/test/test.fr",
     "save_dir":"model_ckp/",
     "cuda":1,
     "batch_size":64,
-    "valid_niter":2400,
+    "valid_niter":1000,
+    "log_every":100,
     "input_feed":1,
     "hidden_size":256,
     "embed_size":256,
@@ -21,5 +25,8 @@
     "uniform_init":0.1,
     "seed":5783287,
     "train":1,
-    "decode":1
+    "decode":1,
+    "max_epoch":20,
+    "patience":5,
+    "max_num_trail":5
 }

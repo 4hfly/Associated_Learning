@@ -54,11 +54,11 @@ import torch.nn as nn
 import torch.nn.utils
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
+from torch.utils.data import Dataset, DataLoader
 
-
-from utils import word2id, NMTData, collate, id2word
-from util import read_corpus, data_iter
-from vocab import Vocab, VocabEntry
+from utils import word2id, NMTData, collate, id2word, LabelSmoothingLoss
+# from util import read_corpus, data_iter
+# from vocab import Vocab, VocabEntry
 
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
@@ -71,13 +71,14 @@ Hypothesis = namedtuple('Hypothesis', ['value', 'score'])
 
 class NMT(nn.Module):
 
-    def __init__(self, embed_size, hidden_size, tkr, dropout_rate=0.2, input_feed=True, label_smoothing=0.):
+    def __init__(self, embed_size, hidden_size, src_tkr, tgt_tkr, dropout_rate=0.2, input_feed=True, label_smoothing=0.):
         super(NMT, self).__init__()
 
         self.embed_size = embed_size
         self.hidden_size = hidden_size
         self.dropout_rate = dropout_rate
-        self.tkr = tkr
+        self.src_tkr = src_tkr
+        self.tgt_tkr = tgt_tkr
         self.input_feed = input_feed
 
         # initialize neural network layers...
@@ -87,7 +88,7 @@ class NMT(nn.Module):
 
         self.encoder_lstm = nn.LSTM(embed_size, hidden_size, bidirectional=True, batch_first=True)
         decoder_lstm_input = embed_size + hidden_size if self.input_feed else embed_size
-        self.decoder_lstm = nn.LSTMCell(decoder_lstm_input, hidden_size, batch_first=True)
+        self.decoder_lstm = nn.LSTMCell(decoder_lstm_input, hidden_size)
 
         # attention: dot product attention
         # project source encoding to decoder rnn's state space
@@ -109,7 +110,7 @@ class NMT(nn.Module):
         self.label_smoothing = label_smoothing
         if label_smoothing > 0.:
             self.label_smoothing_loss = LabelSmoothingLoss(label_smoothing,
-                                                           tgt_vocab_size=len(vocab.tgt), padding_idx=vocab.tgt['<pad>'])
+                                                           tgt_vocab_size=25000, padding_idx=0)
 
     @property
     def device(self) -> torch.device:
@@ -135,18 +136,18 @@ class NMT(nn.Module):
         src_sent_masks = self.get_attention_mask(src_encodings, src_sents_len)
 
         # (tgt_sent_len - 1, batch_size, hidden_size)
-        att_vecs = self.decode(src_encodings, src_sent_masks, decoder_init_vec, tgt_sents_var[:-1])
-
+        att_vecs = self.decode(src_encodings, src_sent_masks, decoder_init_vec, tgt_sents_var[:,:-1])
+    
         # (tgt_sent_len - 1, batch_size, tgt_vocab_size)
         tgt_words_log_prob = F.log_softmax(self.readout(att_vecs), dim=-1)
 
         if self.label_smoothing:
             # (tgt_sent_len - 1, batch_size)
             tgt_gold_words_log_prob = self.label_smoothing_loss(tgt_words_log_prob.view(-1, tgt_words_log_prob.size(-1)),
-                                                                tgt_sents_var[1:].view(-1)).view(-1, len(tgt_sents))
+                                                                tgt_sents_var[:,:-1].reshape(-1)).reshape(-1, tgt_sents_var.size(0))
         else:
             # (tgt_sent_len, batch_size)
-            tgt_words_mask = (tgt_sents_var != self.vocab.tgt['<pad>']).float()
+            tgt_words_mask = (tgt_sents_var != 0).float() # mask "PAD" token
 
             # (tgt_sent_len - 1, batch_size)
             tgt_gold_words_log_prob = torch.gather(tgt_words_log_prob, index=tgt_sents_var[1:].unsqueeze(-1), dim=-1).squeeze(-1) * tgt_words_mask[1:]
@@ -163,7 +164,7 @@ class NMT(nn.Module):
 
         return src_sent_masks.to(self.device)
 
-    def encode(self, src_sents_var: torch.Tensor, src_sent_lens: List[int]) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    def encode(self, src_sents_var: torch.Tensor, src_sent_lens: torch.Tensor) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
         Use a GRU/LSTM to encode source sentences into hidden states
         Args:
@@ -174,18 +175,19 @@ class NMT(nn.Module):
             decoder_init_state: decoder GRU/LSTM's initial state, computed from source encodings
         """
 
-        # (src_sent_len, batch_size, embed_size)
+        # (batch_size, src_sent_len, embed_size)
         src_word_embeds = self.src_embed(src_sents_var)
-        packed_src_embed = pack_padded_sequence(src_word_embeds, src_sent_lens, batch_first=True)
+        # packed_src_embed = pack_padded_sequence(src_word_embeds, src_sent_lens, batch_first=True)
 
         # src_encodings: (src_sent_len, batch_size, hidden_size * 2)
-        src_encodings, (last_state, last_cell) = self.encoder_lstm(packed_src_embed)
-        src_encodings, _ = pad_packed_sequence(src_encodings, batch_first=True)
+        src_encodings, (last_state, last_cell) = self.encoder_lstm(src_word_embeds)
+
+        # src_encodings, _ = pad_packed_sequence(src_encodings, batch_first=True)
 
         # (batch_size, src_sent_len, hidden_size * 2)
         # src_encodings = src_encodings.permute(1, 0, 2)
 
-        dec_init_cell = self.decoder_cell_init(torch.cat([last_cell[0], last_cell[1]], dim=0))
+        dec_init_cell = self.decoder_cell_init(torch.cat([last_cell[0], last_cell[1]], dim=-1))
         dec_init_state = torch.tanh(dec_init_cell)
 
         return src_encodings, (dec_init_state, dec_init_cell)
@@ -213,7 +215,7 @@ class NMT(nn.Module):
         # initialize the attentional vector
         att_tm1 = torch.zeros(batch_size, self.hidden_size, device=self.device)
 
-        # (tgt_sent_len, batch_size, embed_size)
+        # (batch_size, tgt_sent_len, embed_size)
         # here we omit the last word, which is always </s>.
         # Note that the embedding of </s> is not used in decoding
         tgt_word_embeds = self.tgt_embed(tgt_sents_var)
@@ -222,14 +224,15 @@ class NMT(nn.Module):
 
         att_ves = []
 
-        # start from y_0=`<s>`, iterate until y_{T-1}
-        for y_tm1_embed in tgt_word_embeds.split(split_size=1):
-            y_tm1_embed = y_tm1_embed.squeeze(0)
+        # start from y_0=`<s>`, iterate until y_{T-1}, iterate through all words in tgt_sents
+        for y_tm1_embed in tgt_word_embeds.split(split_size=1, dim=1):
+
+            y_tm1_embed = y_tm1_embed.squeeze(1)
             if self.input_feed:
                 # input feeding: concate y_tm1 and previous attentional vector
                 # (batch_size, hidden_size + embed_size)
 
-                x = torch.cat([y_tm1_embed, att_tm1], dim=-1)
+                x = torch.cat((y_tm1_embed, att_tm1), dim=-1)
             else:
                 x = y_tm1_embed
 
@@ -273,11 +276,11 @@ class NMT(nn.Module):
 
         return ctx_vec, softmaxed_att_weight
 
-    def beam_search(self, src_sent: List[str], beam_size: int=5, max_decoding_time_step: int=70) -> List[Hypothesis]:
+    def beam_search(self, src_sent_var: torch.Tensor, beam_size: int=5, max_decoding_time_step: int=70) -> List[Hypothesis]:
         """
         Given a single source sentence, perform beam search
         Args:
-            src_sent: a single tokenized source sentence
+            src_sent: sentence ids
             beam_size: beam size
             max_decoding_time_step: maximum number of time steps to unroll the decoding RNN
         Returns:
@@ -286,17 +289,17 @@ class NMT(nn.Module):
                 score: float: the log-likelihood of the target sentence
         """
 
-        src_sents_var = self.vocab.src.to_input_tensor([src_sent], self.device)
+        # src_sents_var = self.vocab.src.to_input_tensor([src_sent], self.device)
 
-        src_encodings, dec_init_vec = self.encode(src_sents_var, [len(src_sent)])
+        src_encodings, dec_init_vec = self.encode(src_sent_var, [len(src_sent_var)])
         src_encodings_att_linear = self.att_src_linear(src_encodings)
 
         h_tm1 = dec_init_vec
         att_tm1 = torch.zeros(1, self.hidden_size, device=self.device)
 
-        eos_id = self.vocab.tgt['</s>']
+        eos_id = 1
 
-        hypotheses = [['<s>']]
+        hypotheses = [['<SEP>']]
         hyp_scores = torch.zeros(len(hypotheses), dtype=torch.float, device=self.device)
         completed_hypotheses = []
 
@@ -313,7 +316,7 @@ class NMT(nn.Module):
                                                                            src_encodings_att_linear.size(1),
                                                                            src_encodings_att_linear.size(2))
 
-            y_tm1 = torch.tensor([self.vocab.tgt[hyp[-1]] for hyp in hypotheses], dtype=torch.long, device=self.device)
+            y_tm1 = torch.tensor([self.tgt_tkr.encode(hyp[-1]) for hyp in hypotheses], dtype=torch.long, device=self.device)
             y_tm1_embed = self.tgt_embed(y_tm1)
 
             if self.input_feed:
@@ -331,8 +334,8 @@ class NMT(nn.Module):
             contiuating_hyp_scores = (hyp_scores.unsqueeze(1).expand_as(log_p_t) + log_p_t).view(-1)
             top_cand_hyp_scores, top_cand_hyp_pos = torch.topk(contiuating_hyp_scores, k=live_hyp_num)
 
-            prev_hyp_ids = top_cand_hyp_pos / len(self.vocab.tgt)
-            hyp_word_ids = top_cand_hyp_pos % len(self.vocab.tgt)
+            prev_hyp_ids = top_cand_hyp_pos / 25000
+            hyp_word_ids = top_cand_hyp_pos % 25000
 
             new_hypotheses = []
             live_hyp_ids = []
@@ -343,9 +346,9 @@ class NMT(nn.Module):
                 hyp_word_id = hyp_word_id.item()
                 cand_new_hyp_score = cand_new_hyp_score.item()
 
-                hyp_word = self.vocab.tgt.id2word[hyp_word_id]
+                hyp_word = self.tgt_tkr.decode(hyp_word_id)
                 new_hyp_sent = hypotheses[prev_hyp_id] + [hyp_word]
-                if hyp_word == '</s>':
+                if hyp_word == '<SEP>':
                     completed_hypotheses.append(Hypothesis(value=new_hyp_sent[1:-1],
                                                            score=cand_new_hyp_score))
                 else:
@@ -371,7 +374,7 @@ class NMT(nn.Module):
 
         return completed_hypotheses
 
-    def sample(self, src_sents: List[List[str]], sample_size=5, max_decoding_time_step=100) -> List[Hypothesis]:
+    def sample(self, src_sents_var: torch.Tensor, sample_size=5, max_decoding_time_step=100) -> List[Hypothesis]:
         """
         Given a batched list of source sentences, randomly sample hypotheses from the model distribution p(y|x)
         Args:
@@ -384,21 +387,22 @@ class NMT(nn.Module):
                 score: float: the log-likelihood of the target sentence
         """
 
-        src_sents_var = self.vocab.src.to_input_tensor(src_sents, self.device)
+        # src_sents_var = self.vocab.src.to_input_tensor(src_sents, self.device)
 
-        src_encodings, dec_init_vec = self.encode(src_sents_var, [len(sent) for sent in src_sents])
+        src_sents_len = torch.count_nonzero(src_sents_var, dim=-1)
+        src_encodings, dec_init_vec = self.encode(src_sents_var, src_sents_len)
         src_encodings_att_linear = self.att_src_linear(src_encodings)
 
         h_tm1 = dec_init_vec
 
-        batch_size = len(src_sents)
-        total_sample_size = sample_size * len(src_sents)
+        batch_size = src_sents_var.size(0)
+        total_sample_size = sample_size * batch_size
 
         # (total_sample_size, max_src_len, src_encoding_size)
         src_encodings = src_encodings.repeat(sample_size, 1, 1)
         src_encodings_att_linear = src_encodings_att_linear.repeat(sample_size, 1, 1)
 
-        src_sent_masks = self.get_attention_mask(src_encodings, [len(sent) for _ in range(sample_size) for sent in src_sents])
+        src_sent_masks = self.get_attention_mask(src_encodings, [sent.size(0) for _ in range(sample_size) for sent in src_sents])
 
         h_tm1 = (h_tm1[0].repeat(sample_size, 1), h_tm1[1].repeat(sample_size, 1))
 
@@ -461,7 +465,7 @@ class NMT(nn.Module):
         for src_sent_id in range(batch_size):
             for sample_id in range(sample_size):
                 offset = sample_id * batch_size + src_sent_id
-                hyp = Hypothesis(value=self.vocab.tgt.indices2words(_completed_samples[src_sent_id][sample_id])[:-1],
+                hyp = Hypothesis(value=self.tgt_tkr.decode(_completed_samples[src_sent_id][sample_id])[:-1],
                                  score=sample_scores[offset].item())
                 completed_samples[src_sent_id][sample_id] = hyp
 
@@ -471,7 +475,7 @@ class NMT(nn.Module):
     def load(model_path: str):
         params = torch.load(model_path, map_location=lambda storage, loc: storage)
         args = params['args']
-        model = NMT(vocab=params['vocab'], **args)
+        model = NMT(tkr=params['tkr'], **args)
         model.load_state_dict(params['state_dict'])
 
         return model
@@ -482,7 +486,7 @@ class NMT(nn.Module):
         params = {
             'args': dict(embed_size=self.embed_size, hidden_size=self.hidden_size, dropout_rate=self.dropout_rate,
                          input_feed=self.input_feed, label_smoothing=self.label_smoothing),
-            'vocab': self.vocab,
+            'src_tkr': self.src_tkr,
             'state_dict': self.state_dict()
         }
 
@@ -510,11 +514,16 @@ def evaluate_ppl(model, dev_data, batch_size=32):
     # e.g., `torch.no_grad()`
 
     with torch.no_grad():
-        for src_sents, tgt_sents in batch_iter(dev_data, batch_size):
+        for src_sents, tgt_sents in dev_data:
+
+            src_sents = src_sents.to(model.device)
+            tgt_sents = tgt_sents.to(model.device)
+
             loss = -model(src_sents, tgt_sents).sum()
 
             cum_loss += loss.item()
-            tgt_word_num_to_predict = sum(len(s[1:]) for s in tgt_sents)  # omitting leading `<s>`
+            # tgt_word_num_to_predict = sum(len(s[1:]) for s in tgt_sents)  # omitting leading `<s>`
+            tgt_word_num_to_predict = torch.count_nonzero(tgt_sents[:,1:], dim=-1).sum().item()
             cum_tgt_words += tgt_word_num_to_predict
 
         ppl = np.exp(cum_loss / cum_tgt_words)
@@ -553,7 +562,7 @@ def get_tkrs(args):
         ])
     src_tkr.pre_tokenizer = ByteLevel()
     src_tkr.decoder = ByteLevelDecoder()
-    src_tkr.model = BPE(args.src_tkr+'vocab.json', args.src_tkr+'merges.txt')
+    src_tkr.model = BPE(args["src_tkr"]+'vocab.json', args["src_tkr"]+'merges.txt')
 
     tgt_tkr = Tokenizer(BPE())
     tgt_tkr.normalizer = Sequence([
@@ -562,7 +571,7 @@ def get_tkrs(args):
         ])
     tgt_tkr.pre_tokenizer = ByteLevel()
     tgt_tkr.decoder = ByteLevelDecoder()
-    tgt_tkr.model = BPE(args.tgt_tkr+'vocab.json', args.tgt_tkr+'merges.txt')
+    tgt_tkr.model = BPE(args["tgt_tkr"]+'vocab.json', args["tgt_tkr"]+'merges.txt')
     return src_tkr, tgt_tkr
 
 
@@ -572,29 +581,38 @@ def train(args: Dict):
 
     if args["src"] == "en":
         src_tkr=en_tkr
+        tgt_tkr = fr_tkr
     else:
         src_tkr=fr_tkr
+        tgt_tkr = en_tkr
 
-    trainset = NMTData(args.en_data, args.fr_data, en_tkr, fr_tkr)
-    train_data = DataLoader(trainset, batch_size=args.batch_size, collate_fn=collate, shuffle=True)
-    train_bar = tqdm(enumerate(train_data), total=len(train_data))
+    if args["src"] == "en":
+        trainset = NMTData(args["en_data_train"], args["fr_data_train"], en_tkr, fr_tkr)
+        devset = NMTData(args["en_data_dev"], args["fr_data_dev"], en_tkr, fr_tkr)
+    else:
+        trainset = NMTData(args["en_data_train"], args["fr_data_train"], en_tkr, fr_tkr, task="fr2en")
+        devset = NMTData(args["en_data_dev"], args["fr_data_dev"], en_tkr, fr_tkr, task="fr2en")
+        
+    train_data = DataLoader(trainset, batch_size=args["batch_size"], collate_fn=collate, shuffle=True)
+    train_bar = train_data
 
-    devset = NMTData(args.en_dev_data, args.fr_dev_data, en_tkr, fr_tkr)
-    dev_data = DataLoader(devset, batch_size=args.batch_size, collate_fn=collate)
-    dev_bar = tqdm(enumerate(dev_data), total=len(dev_data))
+    dev_data = DataLoader(devset, batch_size=args["batch_size"], collate_fn=collate)
+    dev_bar = dev_data
 
-    train_batch_size = int(args['batch-size'])
+    train_batch_size = int(args['batch_size'])
     clip_grad = float(args['clip_grad'])
     valid_niter = int(args['valid_niter'])
     log_every = int(args['log_every'])
-    model_save_path = args['--save-to']
+    model_save_path = args['save_dir']
 
     model = NMT(embed_size=int(args['embed_size']),
                 hidden_size=int(args['hidden_size']),
                 dropout_rate=float(args['dropout']),
                 input_feed=args['input_feed'],
                 label_smoothing=float(args['label_smoothing']),
-                tkr=src_tkr)
+                src_tkr=src_tkr,
+                tgt_tkr=tgt_tkr
+                )
     model.train()
 
     uniform_init = float(args['uniform_init'])
@@ -620,6 +638,8 @@ def train(args: Dict):
     train_time = begin_time = time.time()
     print('begin Maximum Likelihood training')
 
+    # raise Exception("testing")
+
     while True:
         epoch += 1
 
@@ -634,13 +654,14 @@ def train(args: Dict):
 
             # (batch_size)
             example_losses = -model(src_sents, tgt_sents)
+            # raise Exception('ffr')
             batch_loss = example_losses.sum()
             loss = batch_loss / batch_size
 
             loss.backward()
 
             # clip gradient
-            grad_norm = torch.nn.utils.clip_grad_norm(model.parameters(), clip_grad)
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad)
 
             optimizer.step()
 
@@ -648,15 +669,18 @@ def train(args: Dict):
             report_loss += batch_losses_val
             cum_loss += batch_losses_val
 
-            tgt_words_num_to_predict = sum(len(s[1:]) for s in tgt_sents)  # omitting leading `<s>`
+            # tgt_words_num_to_predict = sum(len(s[1:]) for s in tgt_sents)  # omitting leading `<s>`
+
+            tgt_words_num_to_predict = torch.count_nonzero(tgt_sents[:,1:], dim=-1).sum().item()
+
             report_tgt_words += tgt_words_num_to_predict
             cum_tgt_words += tgt_words_num_to_predict
             report_examples += batch_size
             cum_examples += batch_size
 
             if train_iter % log_every == 0:
-                print('epoch %d, iter %d, avg. loss %.2f, avg. ppl %.2f ' \
-                      'cum. examples %d, speed %.2f words/sec, time elapsed %.2f sec' % (epoch, train_iter,
+                print('epoch %d, iter %d, avg-loss %.2f, avg-ppl %.2f ' \
+                      'cum-examples %d, speed %.2f words/sec, time elapsed %.2f sec' % (epoch, train_iter,
                                                                                          report_loss / report_examples,
                                                                                          math.exp(report_loss / report_tgt_words),
                                                                                          cum_examples,
@@ -668,7 +692,7 @@ def train(args: Dict):
 
             # perform validation
             if train_iter % valid_niter == 0:
-                print('epoch %d, iter %d, cum. loss %.2f, cum. ppl %.2f cum. examples %d' % (epoch, train_iter,
+                print('epoch %d, iter %d, cum-loss %.2f, cum-ppl %.2f cum-examples %d' % (epoch, train_iter,
                                                                                          cum_loss / cum_examples,
                                                                                          np.exp(cum_loss / cum_tgt_words),
                                                                                          cum_examples), file=sys.stderr)
@@ -694,19 +718,19 @@ def train(args: Dict):
 
                     # also save the optimizers' state
                     torch.save(optimizer.state_dict(), model_save_path + '.optim')
-                elif patience < int(args['--patience']):
+                elif patience < int(args['patience']):
                     patience += 1
                     print('hit patience %d' % patience, file=sys.stderr)
 
-                    if patience == int(args['--patience']):
+                    if patience == int(args['patience']):
                         num_trial += 1
                         print('hit #%d trial' % num_trial, file=sys.stderr)
-                        if num_trial == int(args['--max-num-trial']):
+                        if num_trial == int(args['max_num_trial']):
                             print('early stop!', file=sys.stderr)
                             exit(0)
 
                         # decay lr, and restore from previously best checkpoint
-                        lr = optimizer.param_groups[0]['lr'] * float(args['--lr-decay'])
+                        lr = optimizer.param_groups[0]['lr'] * float(args['lr_decay'])
                         print('load previously best model and decay learning rate to %f' % lr, file=sys.stderr)
 
                         # load model
@@ -724,7 +748,7 @@ def train(args: Dict):
                         # reset patience
                         patience = 0
 
-                if epoch == int(args['--max-epoch']):
+                if epoch == int(args['max_epoch']):
                     print('reached maximum number of epochs!', file=sys.stderr)
                     exit(0)
 

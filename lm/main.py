@@ -10,7 +10,7 @@ import data
 import model
 
 parser = argparse.ArgumentParser(description='PyTorch PennTreeBank RNN/LSTM Language Model')
-parser.add_argument('--data', type=str, default='./data/pretrain/pretrain.train.fr.ids',
+parser.add_argument('--data', type=str, default='./data/pretrain/pretrain.train.en.ids',
                     help='location of the data corpus')
 parser.add_argument('--emsize', type=int, default=200,
                     help='size of word embeddings')
@@ -193,7 +193,6 @@ best_val_loss = None
 lr_step = 0
 # At any point you can hit Ctrl + C to break out of training early.
 try:
-    # 這邊直接train，不跑validation了，感覺沒差，不過lr也許要看怎麼調整好一點，雖然我測試一下好像不用調整也可以
     for epoch in range(1, args.epochs+1):
         epoch_start_time = time.time()
         train()

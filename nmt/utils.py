@@ -6,7 +6,7 @@ from torch.nn.utils.rnn import pad_sequence
 import torch.nn.functional as F
 
 class NMTData(Dataset):
-    def __init__(self, en_data, fr_data, en_tkr, fr_tkr):
+    def __init__(self, en_data, fr_data, en_tkr, fr_tkr, task="en2fr"):
         with open(en_data) as f:
             lines = f.readlines()
             en_sents = [l.replace('\n', '') for l in lines]
@@ -14,37 +14,47 @@ class NMTData(Dataset):
         with open(fr_data) as f:
             lines = f.readlines()
             fr_sents = [l.replace('\n', '') for l in lines]
-        
+
+        self.task = task
+
         self.en_data = [en_tkr.encode(s).ids for s in en_sents]
         self.fr_data = [fr_tkr.encode(s).ids for s in fr_sents]
 
         assert len(en_sents) == len(fr_sents)
     def __len__(self):
-        return len(fr_sents)
+        return len(self.fr_data)
 
     def  __getitem__(self, idx):
-        return torch.tensor(en_data[idx]), torch.tensor(fr_data[idx])
-
+        en_sent = self.en_data[idx]
+        fr_sent = self.fr_data[idx]
+        if self.task == "en2fr":
+            fr_sent = [1] + fr_sent + [2]
+            return torch.tensor(en_sent), torch.tensor(fr_sent)
+        else:
+            en_sent = [1] + en_sent + [2]
+            return torch.tensor(fr_sent), torch.tensor(en_sent)
+            
 def collate(batch):
-    en_sents = [e for e,f in batch]
-    fr_sents = [f for e,f in batch]
-    en_pad_sents = pad_sequence(en_sents, batch_first=True)
-    fr_pad_sents = pad_sequence(fr_sents, batch_first=True)
-    return en_pad_sents, fr_pad_sents
+    src_sents = [e for e,f in batch]
+    tgt_sents = [f for e,f in batch]
+    src_pad_sents = pad_sequence(src_sents, batch_first=True)
+    tgt_pad_sents = pad_sequence(tgt_sents, batch_first=True)
+    # tgt_pad_sents = torch.stack(tgt_sents)
+    return src_pad_sents, tgt_pad_sents
 
 
 def word2id(sents, tkr):
     if type(sents[0]) == list:
         return [tkr.encode(s).ids for s in sents]
     else:
-        return tkr.encode(s).ids
+        return tkr.encode(sents).ids
 
 
 def id2word(sents, tkr):
     if type(sents[0]) == list:
         return [tkr.decode(s).ids for s in sents]
     else:
-        return tkr.decode(s).ids
+        return tkr.decode(sents).ids
 
 class LabelSmoothingLoss(nn.Module):
     """
@@ -68,6 +78,8 @@ class LabelSmoothingLoss(nn.Module):
         output (FloatTensor): batch_size x tgt_vocab_size
         target (LongTensor): batch_size
         """
+        # print(output.shape)
+        # print(target.shape)
         # (batch_size, tgt_vocab_size)
         true_dist = self.one_hot.repeat(target.size(0), 1)
 
@@ -80,3 +92,26 @@ class LabelSmoothingLoss(nn.Module):
         loss = -F.kl_div(output, true_dist, reduction='none').sum(-1)
 
         return loss
+
+# from tokenizers import Tokenizer
+# from tokenizers.models import BPE
+# from tokenizers.normalizers import Lowercase, NFKC, Sequence
+# from tokenizers.pre_tokenizers import ByteLevel
+# from tokenizers.decoders import ByteLevel as ByteLevelDecoder
+
+
+# def get_tkr(dp):
+#     tgt_tkr = Tokenizer(BPE())
+#     tgt_tkr.normalizer = Sequence([
+#         NFKC(),
+#         Lowercase()
+#         ])
+#     tgt_tkr.pre_tokenizer = ByteLevel()
+#     tgt_tkr.decoder = ByteLevelDecoder()
+#     tgt_tkr.model = BPE(dp+'/vocab.json', dp+'/merges.txt')
+#     return tgt_tkr
+# D = NMTData('./data/train/en-corpus/train.data.en.test', './data/train/fr-corpus/train.data.fr.test', get_tkr('./data/tkr/en'), get_tkr('./data/tkr/fr'))
+# L = DataLoader(D, batch_size=8, collate_fn = collate)
+# for d in L:
+#     print(d)
+#     break
