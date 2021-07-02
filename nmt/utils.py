@@ -4,6 +4,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 import torch.nn.functional as F
+import math
 
 class NMTData(Dataset):
     def __init__(self, en_data, fr_data, en_tkr, fr_tkr, task="en2fr"):
@@ -81,6 +82,8 @@ class LabelSmoothingLoss(nn.Module):
         # print(output.shape)
         # print(target.shape)
         # (batch_size, tgt_vocab_size)
+        output = output.float()
+        # target = target.float()
         true_dist = self.one_hot.repeat(target.size(0), 1)
 
         # fill in gold-standard word position with confidence value
@@ -88,10 +91,63 @@ class LabelSmoothingLoss(nn.Module):
 
         # fill padded entries with zeros
         true_dist.masked_fill_((target == self.padding_idx).unsqueeze(-1), 0.)
-
+        # print('true dist',true_dist)
+        # print('output', output)
         loss = -F.kl_div(output, true_dist, reduction='none').sum(-1)
 
         return loss
+
+
+def batch_iter(data, batch_size, shuffle=False):
+    batch_num = math.ceil(len(data) / batch_size)
+    index_array = list(range(len(data)))
+
+    if shuffle:
+        np.random.shuffle(index_array)
+
+    for i in range(batch_num):
+        indices = index_array[i * batch_size: (i + 1) * batch_size]
+        examples = [data[idx] for idx in indices]
+
+        examples = sorted(examples, key=lambda e: len(e[0]), reverse=True)
+        src_sents = [e[0] for e in examples]
+        tgt_sents = [e[1] for e in examples]
+
+        yield src_sents, tgt_sents
+
+def read_corpus(file_path, source):
+    data = []
+    for line in open(file_path):
+        sent = line.strip().replace('\n', '')
+        # only append <s> and </s> to the target sentence
+        if source == 'tgt':
+            sent = '[SOS] ' + sent + ' [EOS]'
+        data.append(sent)
+
+    return data
+
+def input_transpose(sents, pad_token):
+    max_len = max(len(s) for s in sents)
+    batch_size = len(sents)
+
+    sents_t = []
+    for i in range(max_len):
+        sents_t.append([sents[k][i] if len(sents[k]) > i else pad_token for k in range(batch_size)])
+
+    return sents_t
+
+
+def to_input_tensor(sents, tkr, device: torch.device) -> torch.Tensor:
+    word_ids = [tkr.encode(s).ids for s in sents]
+    sents_len = [len(s) for s in word_ids]
+    sents_t = input_transpose(word_ids, 0)
+
+    sents_var = torch.tensor(sents_t, dtype=torch.long, device=device)
+
+    return sents_var, sents_len
+
+
+
 
 # from tokenizers import Tokenizer
 # from tokenizers.models import BPE
