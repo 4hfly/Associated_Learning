@@ -1,0 +1,9 @@
+{
+   "batch_first": false,
+   "bias": true,
+   "bidirectional": false,
+   "dropout": 0,
+   "hidden_size": 128,
+   "loss_function": "MSE",
+   "num_layers": 1
+}

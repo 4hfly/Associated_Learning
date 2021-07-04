@@ -1,13 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import json
+import jsons
 from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
 from torch import Tensor
 
+MODELS = {
+    "MSE": nn.MSELoss,
+    "Linear": nn.Linear,
+    "LSTM": nn.LSTM,
+    "LSTMCell": nn.LSTMCell,
+    "GRU": nn.GRU,
+    "GRUCell": nn.GRUCell
+}
+
 CONFIG = {
-    "loss_function": nn.MSELoss(),
+    "loss_function": "MSE",
     "hidden_size": 128,
     "num_layers": 1,
     "bias": True,
@@ -16,13 +27,26 @@ CONFIG = {
     "bidirectional": False,
 }
 
-MODELS = {
-    "Linear": nn.Linear,
-    "LSTM": nn.LSTM,
-    "LSTMCell": nn.LSTMCell,
-    "GRU": nn.GRU,
-    "GRUCell": nn.GRUCell
-}
+
+class ALNN(nn.Module):
+
+    def __init__(
+        self,
+        mode: str,
+        input_size: int,
+        output_size: int,
+        hidden_size: int
+    ):
+        super(ALNN, self).__init__()
+
+        self.layers = nn.Sequential(
+            ALComponent(mode, input_size, output_size, hidden_size),
+            # ALComponent(mode, hidden_size, hidden_size, 768)
+        )
+
+    def forward(self, x, y):
+
+        return self.layers(x, y)
 
 
 class ALComponent(nn.Module):
@@ -82,17 +106,20 @@ class ALComponent(nn.Module):
             nn.Linear(hidden_size, output_size),
             nn.Sigmoid()
         )
-        self.criterion = CONFIG["loss_function"]
+        self.criterion = MODELS[CONFIG["loss_function"]]()
 
     def forward(self, x, y):
 
         self.y = y
         self._s = self.f(x)
         self._s_prime = self.b(self._s)
-        self._t = self.g(y)
-        self._t_prime = self.decoder(self._t)
-
-        return self._s.detach(), self._t.detach()
+        if self.training:
+            self._t = self.g(y)
+            self._t_prime = self.decoder(self._t)
+            return self._s.detach(), self._t.detach()
+        else:
+            self._t_prime = self.decoder(self._s_prime)
+            return self._s.detach(), self._t_prime.detach()
 
     def loss(self):
 
@@ -117,34 +144,47 @@ class LSTMAL(ALComponent):
 
     def forward(
         self,
-        input: Tensor,
-        output: Tensor,
+        x: Tensor,
+        y: Tensor,
         hx: Optional[Tuple[Tensor, Tensor]] = None,
         hy: Optional[Tuple[Tensor, Tensor]] = None
     ):
         """https://github.com/pytorch/pytorch/blob/700df82881786f3560826f194aa9e04beeaa3fd8/torch/nn/modules/rnn.py#L659
 
         Args:
-            input:
-            output:
-            hx:
-            hy:
+            x: (L, N, Hin) or (N, L, Hin)
+            y: (L, N, Hout) or (N, L, Hout)
+            hx: (D * num_layers, N, Hcell)
+            hy: (D * num_layers, N, Hcell)
+
+            L = sequence length
+            N = batch size
+            D = bidirectional
 
         Returns:
 
+            x outputs: output x, (hx_n, cx_n)
+            y outputs: output y, (hy_n, hy_n)
+
         """
 
-        self.y = output
-        self._s, (self._h_nx, c_nx) = self.f(input, hx)
-        self._t, (self._h_ny, c_ny) = self.g(output, hy)
-        self._t_prime = self.decoder(self._t)
-
-        return self._s.detach(), (self._h_nx, c_nx), self._t.detach(), (self._h_ny, c_ny)
+        self.y = y
+        self._s, (self._h_nx, c_nx) = self.f(x, hx)
+        if self.training:
+            self._t, (self._h_ny, c_ny) = self.g(y, hy)
+            self._t_prime = self.decoder(self._t)
+            return self._s.detach(), (self._h_nx, c_nx), self._t.detach(), (self._h_ny, c_ny)
+        else:
+            self._t_prime = self.decoder(self._s)
+            return self._s.detach(), self._t_prime.detach()
 
     def loss(self):
 
-        # loss function for seq2seq model
-        return self.criterion(self._h_nx, self._h_ny) + self.criterion(self._t_prime, self.y)
+        if self.training:
+            # loss function for seq2seq model
+            return self.criterion(self._h_nx, self._h_ny) + self.criterion(self._t_prime, self.y)
+        else:
+            self.criterion(self._t_prime, self.y)
 
 
 class GRUAL(ALComponent):
@@ -158,23 +198,29 @@ class GRUAL(ALComponent):
 
     def forward(
         self,
-        input: Tensor,
-        output: Tensor,
+        x: Tensor,
+        y: Tensor,
         hx: Optional[Tuple[Tensor, Tensor]] = None,
         hy: Optional[Tuple[Tensor, Tensor]] = None
     ):
 
-        self.y = output
-        self._s, self._h_nx = self.f(input, hx)
-        self._t, self._h_ny = self.g(output, hy)
-        self._t_prime = self.decoder(self._t)
-
-        return self._s.detach(), self._h_nx, self._t.detach(), self._h_ny
+        self.y = y
+        self._s, self._h_nx = self.f(x, hx)
+        self._t, self._h_ny = self.g(y, hy)
+        if self.training:
+            self._t_prime = self.decoder(self._t)
+            return self._s.detach(), self._h_nx, self._t.detach(), self._h_ny
+        else:
+            self._t_prime = self.decoder(self._s)
+            return self._s.detach(), self._t_prime.detach()
 
     def loss(self):
 
-        # loss function for seq2seq model
-        return self.criterion(self._h_nx, self._h_ny) + self.criterion(self._t_prime, self.y)
+        if self.training:
+            # loss function for seq2seq model
+            return self.criterion(self._h_nx, self._h_ny) + self.criterion(self._t_prime, self.y)
+        else:
+            self.criterion(self._t_prime, self.y)
 
 
 class ALComponentCell(nn.Module):
@@ -204,22 +250,16 @@ class ALComponentCell(nn.Module):
             bias=bias,
         )
 
-        # bridge function
-        self.b = nn.Sequential(
-            nn.Linear(input_size, hidden_size),
-            nn.Sigmoid()
-        )
-
     def forward(
         self,
-        input: Tensor,
-        output: Tensor,
+        x: Tensor,
+        y: Tensor,
         hx: Optional[Tuple[Tensor, Tensor]] = None,
         hy: Optional[Tuple[Tensor, Tensor]] = None
     ):
-        self.y = output
-        self._h_nx = self.f(input, hx)
-        self._h_ny = self.g(output, hy)
+        self.y = y
+        self._h_nx = self.f(x, hx)
+        self._h_ny = self.g(y, hy)
 
         return self._h_nx, self._h_ny
 
@@ -234,14 +274,14 @@ class LSTMCellAL(ALComponentCell):
 
     def forward(
         self,
-        input: Tensor,
-        output: Tensor,
+        x: Tensor,
+        y: Tensor,
         hx: Optional[Tuple[Tensor, Tensor]] = None,
         hy: Optional[Tuple[Tensor, Tensor]] = None
     ):
-        self.y = output
-        (self._h_nx, self._c_nx) = self.f(input, hx)
-        (self._h_ny, self._c_ny) = self.g(output, hy)
+        self.y = y
+        (self._h_nx, self._c_nx) = self.f(x, hx)
+        (self._h_ny, self._c_ny) = self.g(y, hy)
 
         return (self._h_nx, self._c_nx), (self._h_ny, self._c_ny)
 
@@ -268,14 +308,14 @@ class VGGAL(ALComponent):
         super(VGGAL, self).__init__("VGG", *args, **kwargs)
 
 
-class CNNAL(nn.Module):
+class CNNAL(ALComponent):
 
     def __init__(self, *args, **kwargs) -> None:
 
         super(CNNAL, self).__init__("CNN", *args, **kwargs)
 
 
-class MLPAL(nn.Module):
+class MLPAL(ALComponent):
 
     def __init__(self, *args, **kwargs) -> None:
 
@@ -303,6 +343,19 @@ def test():
         # print(outputs.shape)
         print(x_out.shape, y_out.shape)
         print(loss.item())
+
+
+def load_parameters():
+
+    global CONFIG
+    with open("configs/hyperparams.json", "r", encoding="utf8") as f:
+        CONFIG = json.load(f)
+
+
+def save_parameters():
+
+    with open("configs/hyperparameters.json", "w", encoding="utf8") as f:
+        json.dump(CONFIG, f, ensure_ascii=False, sort_keys=True, indent=3)
 
 
 if __name__ == "__main__":
