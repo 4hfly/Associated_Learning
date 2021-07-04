@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import json
-import jsons
-from typing import Optional, Tuple
+from collections import OrderedDict
+from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -28,27 +28,6 @@ CONFIG = {
 }
 
 
-class ALNN(nn.Module):
-
-    def __init__(
-        self,
-        mode: str,
-        input_size: int,
-        output_size: int,
-        hidden_size: int
-    ):
-        super(ALNN, self).__init__()
-
-        self.layers = nn.Sequential(
-            ALComponent(mode, input_size, output_size, hidden_size),
-            # ALComponent(mode, hidden_size, hidden_size, 768)
-        )
-
-    def forward(self, x, y):
-
-        return self.layers(x, y)
-
-
 class ALComponent(nn.Module):
 
     y: Tensor
@@ -62,7 +41,7 @@ class ALComponent(nn.Module):
         mode: str,
         input_size: int,
         output_size: int,
-        hidden_size: int,
+        hidden_size: Tuple[int, int],
         num_layers: int = CONFIG["num_layers"],
         bias: bool = CONFIG["bias"],
         batch_first: bool = CONFIG["batch_first"],
@@ -73,13 +52,13 @@ class ALComponent(nn.Module):
         super(ALComponent, self).__init__()
         # f function
         if mode == "Linear":
-            self.f = MODELS[mode](input_size, input_size)
-            self.g = MODELS[mode](output_size, hidden_size)
+            self.f = MODELS[mode](input_size, hidden_size[0])
+            self.g = MODELS[mode](output_size, hidden_size[1])
 
         elif mode == "LSTM" or mode == "GRU":
             self.f = MODELS[mode](
                 input_size,
-                hidden_size,
+                hidden_size[0],
                 num_layers,
                 bias=bias,
                 batch_first=batch_first,
@@ -88,7 +67,7 @@ class ALComponent(nn.Module):
             )
             self.g = MODELS[mode](
                 output_size,
-                hidden_size,
+                hidden_size[1],
                 num_layers,
                 bias=bias,
                 batch_first=batch_first,
@@ -98,14 +77,16 @@ class ALComponent(nn.Module):
 
         # bridge function
         self.b = nn.Sequential(
-            nn.Linear(input_size, hidden_size),
+            nn.Linear(hidden_size[0], hidden_size[1]),
             nn.Sigmoid()
         )
 
+        # h function
         self.decoder = nn.Sequential(
-            nn.Linear(hidden_size, output_size),
+            nn.Linear(hidden_size[1], output_size),
             nn.Sigmoid()
         )
+
         self.criterion = MODELS[CONFIG["loss_function"]]()
 
     def forward(self, x, y):
@@ -119,7 +100,7 @@ class ALComponent(nn.Module):
             return self._s.detach(), self._t.detach()
         else:
             self._t_prime = self.decoder(self._s_prime)
-            return self._s.detach(), self._t_prime.detach()
+            return self._s, self._t_prime
 
     def loss(self):
 
@@ -170,13 +151,16 @@ class LSTMAL(ALComponent):
 
         self.y = y
         self._s, (self._h_nx, c_nx) = self.f(x, hx)
+        self._s_prime = self.b(self._s)
         if self.training:
             self._t, (self._h_ny, c_ny) = self.g(y, hy)
             self._t_prime = self.decoder(self._t)
+            # TODO: not sure which one is correct.
+            # (self._h_nx, c_nx) -> (self._h_nx.detach(), c_nx.detach())
             return self._s.detach(), (self._h_nx, c_nx), self._t.detach(), (self._h_ny, c_ny)
         else:
             self._t_prime = self.decoder(self._s)
-            return self._s.detach(), self._t_prime.detach()
+            return self._s, (self._h_nx, c_nx), self._t_prime
 
     def loss(self):
 
@@ -200,19 +184,20 @@ class GRUAL(ALComponent):
         self,
         x: Tensor,
         y: Tensor,
-        hx: Optional[Tuple[Tensor, Tensor]] = None,
-        hy: Optional[Tuple[Tensor, Tensor]] = None
+        hx: Optional[Tensor] = None,
+        hy: Optional[Tensor] = None
     ):
 
         self.y = y
         self._s, self._h_nx = self.f(x, hx)
-        self._t, self._h_ny = self.g(y, hy)
+        self._s_prime = self.b(self._s)
         if self.training:
+            self._t, self._h_ny = self.g(y, hy)
             self._t_prime = self.decoder(self._t)
             return self._s.detach(), self._h_nx, self._t.detach(), self._h_ny
         else:
             self._t_prime = self.decoder(self._s)
-            return self._s.detach(), self._t_prime.detach()
+            return self._s, self._h_nx, self._t_prime
 
     def loss(self):
 
@@ -320,6 +305,72 @@ class MLPAL(ALComponent):
     def __init__(self, *args, **kwargs) -> None:
 
         super(MLPAL, self).__init__("MLP", *args, **kwargs)
+
+
+class ALNet(nn.Module):
+
+    _mode = {
+        "Linear": LinearAL,
+        "LSTM": LSTMAL,
+        "GRU": GRUAL,
+    }
+
+    def __init__(
+        self,
+        mode: str,
+        input_size: int,
+        output_size: int,
+        hidden_size: List[Tuple[int, int]]
+    ):
+        super(ALNet, self).__init__()
+
+        self.mode = mode
+        model = self._mode[mode]
+        # hidden_size: List[Tuple[int, int]]
+        # e.g. [(256, 256), (128, 128), (64, 64)]
+        # The following code will create an ordered dictionary, and the number
+        # of layers depends on the length of list hidden_size. Each layer has
+        # its own parameters like input_size or output_size. We may need this
+        # data format for pipeline usage.
+        # layers: {
+        #     "layers_1": LSTMAL(300, 300, (256, 256)),
+        #     "layers_2": LSTMAL(256, 256, (128, 128)),
+        #     "layers_3": LSTMAL(128, 128, ( 64,  64))
+        # }
+        layers = [("layer_1", model(input_size, output_size, hidden_size[0]))]
+        for i, h in enumerate(hidden_size[1:]):
+            layers.append((
+                f"layer_{i+2}",
+                model(
+                    input_size=hidden_size[i][0],
+                    output_size=hidden_size[i][1],
+                    hidden_size=h
+                )
+            ))
+
+        self.layers = nn.ModuleDict(OrderedDict(layers))
+
+    def forward(self, x, y, hx, hy, choice):
+
+        if self.training:
+
+            if self.mode == "Linear":
+                s, t = self.layers[f"layer_{choice}"](x, y)
+                return s, t
+
+            elif self.mode == "LSTM" or self.mode == "Linear":
+                s, hs, t, ht = self.layers[f"layer_{choice}"](x, y, hx, hy)
+                return s, hs, t, ht
+
+        else:
+
+            if self.mode == "Linear":
+                s, t_prime = self.layers[f"layer_{choice}"](x, y)
+                return s, t_prime
+
+            elif self.mode == "LSTM" or self.mode == "Linear":
+                s, hs, t_prime = self.layers[f"layer_{choice}"](x, y, hx)
+                return s, hs, t_prime
 
 
 def test():
