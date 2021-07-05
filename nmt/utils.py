@@ -108,7 +108,8 @@ def batch_iter(data, batch_size, shuffle=False):
     for i in range(batch_num):
         indices = index_array[i * batch_size: (i + 1) * batch_size]
         examples = [data[idx] for idx in indices]
-
+        # if i ==0:
+        #     print(examples[0])
         examples = sorted(examples, key=lambda e: len(e[0]), reverse=True)
         src_sents = [e[0] for e in examples]
         tgt_sents = [e[1] for e in examples]

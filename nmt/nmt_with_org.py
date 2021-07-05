@@ -340,8 +340,8 @@ class NMT(nn.Module):
             contiuating_hyp_scores = (hyp_scores.unsqueeze(1).expand_as(log_p_t) + log_p_t).view(-1)
             top_cand_hyp_scores, top_cand_hyp_pos = torch.topk(contiuating_hyp_scores, k=live_hyp_num)
 
-            prev_hyp_ids = top_cand_hyp_pos / len(self.vocab.tgt)
-            hyp_word_ids = top_cand_hyp_pos % len(self.vocab.tgt)
+            prev_hyp_ids = top_cand_hyp_pos / 25000
+            hyp_word_ids = top_cand_hyp_pos % 25000
 
             new_hypotheses = []
             live_hyp_ids = []
@@ -352,9 +352,9 @@ class NMT(nn.Module):
                 hyp_word_id = hyp_word_id.item()
                 cand_new_hyp_score = cand_new_hyp_score.item()
 
-                hyp_word = self.vocab.tgt.id2word[hyp_word_id]
+                hyp_word = self.tgt_tkr.deocde(hyp_word_id)
                 new_hyp_sent = hypotheses[prev_hyp_id] + [hyp_word]
-                if hyp_word == '</s>':
+                if hyp_word == '[EOS]':
                     completed_hypotheses.append(Hypothesis(value=new_hyp_sent[1:-1],
                                                            score=cand_new_hyp_score))
                 else:
@@ -499,7 +499,7 @@ class NMT(nn.Module):
         torch.save(params, path)
 
 
-def evaluate_ppl(model, dev_data, batch_size=32):
+def evaluate_ppl(model, dev_data, tkr, batch_size=32):
     """
     Evaluate perplexity on dev sentences
     Args:
@@ -524,7 +524,8 @@ def evaluate_ppl(model, dev_data, batch_size=32):
             loss = -model(src_sents, tgt_sents).sum()
 
             cum_loss += loss.item()
-            tgt_word_num_to_predict = sum(len(s[1:]) for s in tgt_sents)  # omitting leading `<s>`
+            tgt_word_num_to_predict = sum( [len(tkr.encode(s).ids)-1 for s in tgt_sents])
+            # tgt_word_num_to_predict = sum(len(s[1:]) for s in tgt_sents)  # omitting leading `<s>`
             cum_tgt_words += tgt_word_num_to_predict
 
         ppl = np.exp(cum_loss / cum_tgt_words)
@@ -575,13 +576,33 @@ def get_tkrs(args):
     return src_tkr, tgt_tkr
 
 
+def check_empty(src, tgt):
+    new_src = []
+    new_tgt = []
+    delete_num=0
+    for i in range(len(src)):
+        if len(src[i]) == 0:
+            delete_num+=1
+            continue
+        elif len(tgt[i]) == 2:
+            delete_num+=1
+            continue
+        else:
+            new_src.append(src[i])
+            new_tgt.append(tgt[i])
+    print('delete num', delete_num)
+    return new_src, new_tgt
 
 def train(args: Dict):
     train_data_src = read_corpus(args['train_src'], source='src')
     train_data_tgt = read_corpus(args['train_tgt'], source='tgt')
 
+    train_data_src, train_data_tgt = check_empty(train_data_src, train_data_tgt)
+
     dev_data_src = read_corpus(args['dev_src'], source='src')
     dev_data_tgt = read_corpus(args['dev_tgt'], source='tgt')
+
+    dev_data_src, dev_data_tgt = check_empty(dev_data_src, dev_data_tgt)
 
     train_data = list(zip(train_data_src, train_data_tgt))
     dev_data = list(zip(dev_data_src, dev_data_tgt))
@@ -629,12 +650,17 @@ def train(args: Dict):
     while True:
         epoch += 1
 
-        for src_sents, tgt_sents in batch_iter(train_data, batch_size=train_batch_size, shuffle=True):
+        for src_sents, tgt_sents in batch_iter(train_data, batch_size=train_batch_size, shuffle=False):
             train_iter += 1
 
             optimizer.zero_grad()
 
             batch_size = len(src_sents)
+            # print(src_sents, tgt_sents)
+            # src_lens = [len(s) for s in src_sents]
+            # tgt_lens = [len(s) for s in tgt_sents]
+            # if 2 in tgt_lens or 0 in src_lens:
+            #     print()
 
             # (batch_size)
             example_losses = -model(src_sents, tgt_sents)
@@ -685,7 +711,7 @@ def train(args: Dict):
                 print('begin validation ...', file=sys.stderr)
 
                 # compute dev. ppl and bleu
-                dev_ppl = evaluate_ppl(model, dev_data, batch_size=128)   # dev batch size can be a bit larger
+                dev_ppl = evaluate_ppl(model, dev_data, tgt_tkr, batch_size=128)   # dev batch size can be a bit larger
                 valid_metric = -dev_ppl
 
                 print('validation: iter %d, dev. ppl %f' % (train_iter, dev_ppl), file=sys.stderr)
@@ -707,7 +733,7 @@ def train(args: Dict):
                     if patience == int(args['patience']):
                         num_trial += 1
                         print('hit #%d trial' % num_trial, file=sys.stderr)
-                        if num_trial == int(args['--max-num-trial']):
+                        if num_trial == int(args['max_num_trial']):
                             print('early stop!', file=sys.stderr)
                             exit(0)
 
@@ -759,27 +785,27 @@ def decode(args: Dict[str, str]):
     """
 
     print(f"load test source sentences from [{args['TEST_SOURCE_FILE']}]", file=sys.stderr)
-    test_data_src = read_corpus(args['TEST_SOURCE_FILE'], source='src')
-    if args['TEST_TARGET_FILE']:
+    test_data_src = read_corpus(args['test_src'], source='src')
+    if args['test_tgt']:
         print(f"load test target sentences from [{args['TEST_TARGET_FILE']}]", file=sys.stderr)
-        test_data_tgt = read_corpus(args['TEST_TARGET_FILE'], source='tgt')
+        test_data_tgt = read_corpus(args['test_tgt'], source='tgt')
 
     print(f"load model from {args['MODEL_PATH']}", file=sys.stderr)
-    model = NMT.load(args['MODEL_PATH'])
+    model = NMT.load(args['save_to'])
 
-    if args['--cuda']:
+    if args['cuda']:
         model = model.to(torch.device("cuda:0"))
 
     hypotheses = beam_search(model, test_data_src,
-                             beam_size=int(args['--beam-size']),
-                             max_decoding_time_step=int(args['--max-decoding-time-step']))
+                             beam_size=int(args['beam_size']),
+                             max_decoding_time_step=int(args['max_decoding_time_step']))
 
-    if args['TEST_TARGET_FILE']:
+    if args['test_tgt']:
         top_hypotheses = [hyps[0] for hyps in hypotheses]
         bleu_score = compute_corpus_level_bleu_score(test_data_tgt, top_hypotheses)
         print(f'Corpus BLEU: {bleu_score}', file=sys.stderr)
 
-    with open(args['OUTPUT_FILE'], 'w') as f:
+    with open(args['test_pred_file'], 'w') as f:
         for src_sent, hyps in zip(test_data_src, hypotheses):
             top_hyp = hyps[0]
             hyp_sent = ' '.join(top_hyp.value)
