@@ -25,7 +25,7 @@
     "lr":0.001,
     "uniform_init":0.1,
     "seed":5783287,
-    "train":1,
+    "train":0,
     "decode":1,
     "max_epoch":20,
     "patience":5,
