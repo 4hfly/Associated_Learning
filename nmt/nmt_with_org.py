@@ -303,9 +303,9 @@ class NMT(nn.Module):
         h_tm1 = dec_init_vec
         att_tm1 = torch.zeros(1, self.hidden_size, device=self.device)
 
-        eos_id = self.vocab.tgt['</s>']
+        eos_id = self.tgt_tkr.encode('[EOS]').ids[0]
 
-        hypotheses = [['<s>']]
+        hypotheses = [['[SOS]']]
         hyp_scores = torch.zeros(len(hypotheses), dtype=torch.float, device=self.device)
         completed_hypotheses = []
 

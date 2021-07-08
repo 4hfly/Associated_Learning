@@ -12,7 +12,7 @@
     "test_pred_file":"data/pred/en2fr_small.test",
     "cuda":1,
     "batch_size":32,
-    "valid_niter":100000,
+    "valid_niter":10000,
     "log_every":100,
     "input_feed":0,
     "hidden_size":256,
