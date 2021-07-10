@@ -14,11 +14,13 @@ MODELS = {
     "LSTM": nn.LSTM,
     "LSTMCell": nn.LSTMCell,
     "GRU": nn.GRU,
-    "GRUCell": nn.GRUCell
+    "GRUCell": nn.GRUCell,
+    "attention": None
 }
 
 CONFIG = {
     "loss_function": "MSE",
+    "decoder": "attn",
     "hidden_size": 128,
     "num_layers": 1,
     "bias": True,
@@ -50,6 +52,7 @@ class ALComponent(nn.Module):
     ) -> None:
 
         super(ALComponent, self).__init__()
+
         # f function
         if mode == "Linear":
             self.f = MODELS[mode](input_size, hidden_size[0])
@@ -321,7 +324,7 @@ class ALNet(nn.Module):
         input_size: int,
         output_size: int,
         hidden_size: List[Tuple[int, int]]
-    ):
+    ) -> None:
         super(ALNet, self).__init__()
 
         self.mode = mode
@@ -355,35 +358,47 @@ class ALNet(nn.Module):
         if self.training:
 
             if self.mode == "Linear":
-                s, t = self.layers[f"layer_{choice}"](x, y)
-                return s, t
-
-            elif self.mode == "LSTM" or self.mode == "Linear":
-                s, hs, t, ht = self.layers[f"layer_{choice}"](x, y, hx, hy)
-                return s, hs, t, ht
+                return self.layers[f"layer_{choice}"](x, y)
+            elif self.mode == "LSTM" or self.mode == "GRU":
+                return self.layers[f"layer_{choice}"](x, y, hx, hy)
 
         else:
 
             if self.mode == "Linear":
-                s, t_prime = self.layers[f"layer_{choice}"](x, y)
-                return s, t_prime
+                return self.layers[f"layer_{choice}"](x, y)
+            elif self.mode == "LSTM" or self.mode == "GRU":
+                return self.layers[f"layer_{choice}"](x, y, hx)
 
-            elif self.mode == "LSTM" or self.mode == "Linear":
-                s, hs, t_prime = self.layers[f"layer_{choice}"](x, y, hx)
-                return s, hs, t_prime
+    def inference(self, x) -> Tensor:
+
+        k: str = ''
+        y: Tensor = x
+
+        for k in list(self.layers.keys()):
+            y = self.layers[k].f(y)
+
+        y = self.layers[k].b(y)
+
+        for k in list(self.layers.keys()).reverse():
+            y = self.layers[k].decoder(y)
+
+        return y
 
 
 def test():
 
-    inputs = torch.randn(8, 1, 4)
-    outputs = torch.randn(8, 1, 40)
-    model = LSTMAL(4, 4, 2)
+    inputs = torch.randint(1, 1000, (8, 2,))
+    outputs = torch.randint(1, 1000, (8, 2,))
+    encoder = nn.Embedding(1000, 64, padding_idx=0)
+    encoded_in = encoder(inputs)
+    encoded_out = encoder(outputs)
+    model = ALNet(64, 64, [(16, 16), (8, 8)])
     optimizer = torch.optim.SGD(model.parameters(), lr=1e-4)
 
     epochs = 5
     for _ in range(epochs):
 
-        x_out, y_out = model(inputs, outputs)
+        x_out, y_out = model(encoded_in, encoded_out)
         loss = model.loss()
 
         optimizer.zero_grad()

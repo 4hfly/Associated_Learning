@@ -1,60 +1,81 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# TODO: 還有 SentencePiece 可用
+# TODO: SentencePiece
 
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
-from tokenizers import Encoding, Tokenizer
-from tokenizers.decoders import ByteLevel as ByteLevelDecoder
+from tokenizers import (
+    Encoding,
+    Tokenizer,
+    AddedToken,
+    pre_tokenizers,
+    decoders,
+    trainers,
+    processors,
+)
+
+from tokenizers.implementations import BaseTokenizer
 from tokenizers.models import BPE
-from tokenizers.normalizers import NFKC, Lowercase, Sequence
-from tokenizers.pre_tokenizers import ByteLevel
-from tokenizers.trainers import BpeTrainer
+from tokenizers.normalizers import Lowercase, NFKC, Sequence
 
 # https://huggingface.co/docs/tokenizers/python/latest/quicktour.html
-# TODO: 1. post-processing 2. batch
+# TODO: 1. this tokenizer should inherit from PreTrainedTokenizer.
+#       2. check post-processing.
+#       3. add encode_batch, decode_batch.
 
 
-class BPETokenizer(object):
+class ByteLevelBPETokenizer(object):
 
     def __init__(
         self,
-        vocab_size=25000,
-        min_freq=5,
-        lang="en",
-        files=[None, None]
+        vocab_size: int = 25000,
+        min_freq: int = 5,
+        lang: str = "en",
+        is_tgt: bool = True,
+        files: Optional[List[str]] = [None, None]
     ) -> None:
         """
 
         Args:
             vocab_size: (int)
             min_freq: minimum frequency
-            lang: 
+            lang: "en", "fr", etc.
             files: (List[str]) ["vocab.json", "merge.txt"]
         """
-        super(BPETokenizer, self).__init__()
+        super(ByteLevelBPETokenizer, self).__init__()
 
         self.tokenizer = Tokenizer(BPE(files[0], files[1]))
 
         self.lang = lang
-        self.trainer = BpeTrainer(
+        self.trainer = trainers.BpeTrainer(
             vocab_size=vocab_size,
             min_frequency=min_freq,
-            special_tokens=["[PAD]", "[SEP]"],
-            initial_alphabet=ByteLevel.alphabet()
+            special_tokens=["<pad>", "<s>", "</s>"],
+            initial_alphabet=pre_tokenizers.ByteLevel.alphabet()
         )
 
         # https://huggingface.co/docs/tokenizers/python/latest/components.html#normalizers
         self.tokenizer.normalizer = Sequence([NFKC(), Lowercase()])
         # https://huggingface.co/docs/tokenizers/python/latest/components.html#pre-tokenizers
-        self.tokenizer.pre_tokenizer = ByteLevel()
-        self.tokenizer.decoder = ByteLevelDecoder()
+        self.tokenizer.pre_tokenizer = pre_tokenizers.Sequence([
+            pre_tokenizers.WhitespaceSplit(),
+            pre_tokenizers.ByteLevel()
+        ])
+        # https://huggingface.co/docs/tokenizers/python/latest/components.html#postprocessor
+        if is_tgt:
+            self.tokenizer.post_processor = processors.TemplateProcessing(
+                single="<s> $A </s>",
+                pair="<s> $A </s> $B:1",
+                special_tokens=[("<s>", 1), ("</s>", 2)],
+            )
+        # https://huggingface.co/docs/tokenizers/python/latest/components.html#decoders
+        self.tokenizer.decoder = decoders.ByteLevel()
 
     def train(self, files=None) -> None:
 
         if files is None:
-            # files 長這樣：["test.txt", "train.txt", "valid.txt"]
+            # files: ["test.txt", "train.txt", "valid.txt"]
             files = [
                 f"data/wikitext-103-raw/wiki.{split}.raw" for split in ["test", "train", "valid"]
             ]
@@ -63,6 +84,7 @@ class BPETokenizer(object):
 
     def save(self) -> None:
 
+        # folder
         self.tokenizer.model.save(f"data/tokenizer/{self.lang}")
 
     def encode(self, input: Union[str, List[str], Tuple[str]]) -> Encoding:
@@ -71,28 +93,29 @@ class BPETokenizer(object):
 
     def decode(self, input: Encoding) -> str:
 
-        # 注意 type(input) == Encoding
+        # Note that type(input) == Encoding
         return self.tokenizer.decode(input.ids)
 
 
 if __name__ == "__main__":
 
-    tokenizer = BPETokenizer(lang="fr")
+    tokenizer = ByteLevelBPETokenizer(lang="fr")
     files = [
-        "data/wmt14/commoncrawl/commoncrawl.fr-en.fr",
-        "data/wmt14/europarl_v7/europarl-v7.fr-en.fr",
-        "data/wmt14/giga/giga-fren.release2.fixed.fr",
-        "data/wmt14/news-commentary/news-commentary-v9.fr-en.fr",
-        "data/wmt14/un/undoc.2000.fr-en.fr"
+        "data/wmt14/commoncrawl/commoncrawl.fr-en.fr.shell",
+        "data/wmt14/europarl_v7/europarl-v7.fr-en.fr.shell",
+        "data/wmt14/giga/giga-fren.release2.fixed.fr.shell",
+        "data/wmt14/news-commentary/news-commentary-v9.fr-en.fr.shell",
+        "data/wmt14/un/undoc.2000.fr-en.fr.shell"
     ]
-    tokenizer.train()
+    tokenizer.train(files)
     tokenizer.save()
-    encoded = tokenizer.encode("Bonjour, vous tous ! Comment ça va 😁 ?")
+    encoded = tokenizer.encode(
+        "Bonjour, vous tous! Comment ça va 😁?")
     # Outputs:
-    # ['Ġbon', 'j', 'our', ',', 'Ġv', 'ous', 'Ġto', 'us', 'Ġ!', 'Ġcomment',
-    #  'ĠÃ', '§', 'a', 'Ġva', 'Ġ', 'ð', 'Ł', 'ĺ', 'ģ', 'Ġ?']
+    # ['Ġbon', 'jour', ',', 'Ġvous', 'Ġtous', '!', 'Ġcomment', 'ĠÃ§a', 'Ġva',
+    #  'Ġ', 'ð', 'Ł', 'ĺ', 'ģ', '?']
     print(encoded.tokens)
     decoded = tokenizer.decode(encoded)
     # Outputs:
-    # bonjour, vous tous ! comment ça va 😁 ?
+    # bonjour, vous tous! comment ça va 😁?
     print(decoded)
