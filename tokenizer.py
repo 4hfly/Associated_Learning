@@ -15,12 +15,12 @@ from tokenizers import (
     processors,
 )
 
-from tokenizers.implementations import BaseTokenizer
 from tokenizers.models import BPE
 from tokenizers.normalizers import Lowercase, NFKC, Sequence
+from transformers.tokenization_utils import PreTrainedTokenizer
 
 # https://huggingface.co/docs/tokenizers/python/latest/quicktour.html
-# TODO: 1. this tokenizer should inherit from PreTrainedTokenizer.
+# TODO: 1. these tokenizers should inherit from PreTrainedTokenizer.
 #       2. check post-processing.
 #       3. add encode_batch, decode_batch.
 
@@ -97,7 +97,14 @@ class ByteLevelBPETokenizer(object):
         return self.tokenizer.decode(input.ids)
 
 
-if __name__ == "__main__":
+class SentencePiece(PreTrainedTokenizer):
+    """https://github.com/huggingface/transformers/blob/master/src/transformers/models/t5/tokenization_t5.py"""
+
+    def __init__(self) -> None:
+        super().__init__()
+
+
+def train_bpe():
 
     tokenizer = ByteLevelBPETokenizer(lang="fr")
     files = [
@@ -119,3 +126,7 @@ if __name__ == "__main__":
     # Outputs:
     # bonjour, vous tous! comment ça va 😁?
     print(decoded)
+
+
+if __name__ == "__main__":
+    pass
