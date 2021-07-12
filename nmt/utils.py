@@ -121,8 +121,8 @@ def read_corpus(file_path, source):
     for line in open(file_path):
         sent = line.strip().replace('\n', '')
         # only append <s> and </s> to the target sentence
-        if source == 'tgt':
-            sent = '[SOS] ' + sent + ' [EOS]'
+        # if source == 'tgt':
+        #     sent = "<s> " + sent + " </s>"
         data.append(sent)
 
     return data
@@ -138,8 +138,14 @@ def input_transpose(sents, pad_token):
     return sents_t
 
 
-def to_input_tensor(sents, tkr, device: torch.device) -> torch.Tensor:
-    word_ids = [tkr.encode(s).ids for s in sents]
+def to_input_tensor(sents, tkr, device: torch.device, tgt=False) -> torch.Tensor:
+
+    if tgt:
+        sents = [" "+s for s in sents]
+        word_ids = [[1]+tkr.encode(s).ids+[2] for s in sents]
+    else:
+        word_ids = [tkr.encode(s).ids for s in sents] 
+
     sents_len = [len(s) for s in word_ids]
     sents_t = input_transpose(word_ids, 0)
 

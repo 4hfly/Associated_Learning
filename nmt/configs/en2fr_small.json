@@ -11,8 +11,8 @@
     "save_to":"model_ckp/en2fr.10.pth",
     "test_pred_file":"data/pred/en2fr_small.test",
     "cuda":1,
-    "batch_size":32,
-    "valid_niter":10000,
+    "batch_size":16,
+    "valid_niter":150000,
     "log_every":100,
     "input_feed":0,
     "hidden_size":256,
@@ -25,10 +25,10 @@
     "lr":0.001,
     "uniform_init":0.1,
     "seed":5783287,
-    "train":0,
+    "train":1,
     "decode":1,
     "max_epoch":20,
     "patience":5,
 	"max_num_trial":5,
-    "max_decoding_time_step":100
+    "max_decoding_time_step":300
 }

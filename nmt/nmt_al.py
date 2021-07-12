@@ -54,38 +54,50 @@ class NMT_AL(nn.Module):
 
     @property
     def device(self) -> torch.device:
-        return self.src_embed.weight.device
+        return self.emb_al.f.weight.device
 
     def forward(self, src_sents: List[List[str]], tgt_sents: List[List[str]]) -> torch.Tensor:
 
         # (src_sent_len, batch_size)
-        src_sents_var, src_sents_len = self.to_input_tensor(src_sents, self.src_tkr, device=self.device)
-        # (tgt_sent_len, batch_size)
-        tgt_sents_var, tgt_sents_len = self.to_input_tensor(tgt_sents, self.tgt_tkr, device=self.device)
+        if not self.reverse:
+            src_sents_var, src_sents_len = self.to_input_tensor(src_sents, self.src_tkr, device=self.device)
+            # (tgt_sent_len, batch_size)
+            tgt_sents_var, tgt_sents_len = self.to_input_tensor(tgt_sents, self.tgt_tkr, device=self.device, tgt=True)
+        else:
+            src_sents_var, src_sents_len = self.to_input_tensor(src_sents, self.src_tkr, device=self.device, tgt=True)
+            # (tgt_sent_len, batch_size)
+            tgt_sents_var, tgt_sents_len = self.to_input_tensor(tgt_sents, self.tgt_tkr, device=self.device)     
 
         emb_x, emb_y = self.emb_al(src_sents_var, tgt_sents_var, self.reverse)
 
         if not self.reverse:
-            self.lstm(emb_x, emb_y, src_sents_len, tgt_sents_len, self.emb_al.g, tgt_sents)
+
+            self.lstm(emb_x, emb_y, src_sents_len, tgt_sents_len, self.emb_al.g, tgt_sents_var)
         else:
-            self.lstm(emb_x, emb_y, src_sents_len, tgt_sents_len, self.emb_al.g, src_sents)
+            self.lstm(emb_x, emb_y, src_sents_len, tgt_sents_len, self.emb_al.f, src_sents_var)
 
         return [self.emb_al.loss, self.lstm.loss]
 
-    def inference(self, src_sents, tgt_sents, reverse=False):
-        # (src_sent_len, batch_size)
-        src_sents_var, src_sents_len = self.to_input_tensor(src_sents, self.src_tkr, device=self.device)
-        # (tgt_sent_len, batch_size)
-        tgt_sents_var, tgt_sents_len = self.to_input_tensor(tgt_sents, self.tgt_tkr, device=self.device)
+    def inference(self, src_sents, tgt_sents):
+        if not self.reverse:
+            # (src_sent_len, batch_size)
+            src_sents_var, src_sents_len = self.to_input_tensor(src_sents, self.src_tkr, device=self.device)
+            # (tgt_sent_len, batch_size)
+            tgt_sents_var, tgt_sents_len = self.to_input_tensor(tgt_sents, self.tgt_tkr, device=self.device, tgt=True)
+        else:
+            # (src_sent_len, batch_size)
+            src_sents_var, src_sents_len = self.to_input_tensor(src_sents, self.src_tkr, device=self.device, tgt=True)
+            # (tgt_sent_len, batch_size)
+            tgt_sents_var, tgt_sents_len = self.to_input_tensor(tgt_sents, self.tgt_tkr, device=self.device)
 
-        if not reverse:
+        if not self.reverse:
             src_emb = self.emb_al.f(src_sents_var)
-            attn_vecs = self.lstm.inference(src_emb, src_sents_len, self.emb_al.g, tgt_sents_var)
-            tgt_words_log_prob = F.logsoftmax(self.emb_al.decoder_g(attn_vecs))
+            attn_vecs = self.lstm.inference(src_emb, src_sents_len, self.emb_al.g, tgt_sents_var, self.reverse)
+            tgt_words_log_prob = F.log_softmax(self.emb_al.decoder_g(attn_vecs),dim=-1)
             if self.label_smoothing:
                 # (tgt_sent_len - 1, batch_size)
                 tgt_gold_words_log_prob = self.label_smoothing_loss(tgt_words_log_prob.view(-1, tgt_words_log_prob.size(-1)),
-                                                                    tgt_sents_var[1:].view(-1)).view(-1, len(tgt_sents))
+                                                                    tgt_sents_var.view(-1)).view(-1, len(tgt_sents))
             else:
                 # (tgt_sent_len, batch_size)
                 tgt_words_mask = (tgt_sents_var != 0).float()
@@ -100,12 +112,12 @@ class NMT_AL(nn.Module):
 
         else:
             tgt_emb = self.emb_al.g(tgt_sents_var)
-            attn_vecs = self.lstm.inference(tgt_emb, tgt_sents_len, self.emb_al.f, src_sents_var)
-            tgt_words_log_prob = F.logsoftmax(self.emb_al.decoder_f(attn_vecs))
+            attn_vecs = self.lstm.inference(tgt_emb, tgt_sents_len, self.emb_al.f, src_sents_var, self.reverse)
+            tgt_words_log_prob = F.log_softmax(self.emb_al.decoder_f(attn_vecs), dim=-1)
             if self.label_smoothing:
                 # (tgt_sent_len - 1, batch_size)
                 tgt_gold_words_log_prob = self.label_smoothing_loss(tgt_words_log_prob.view(-1, tgt_words_log_prob.size(-1)),
-                                                                    tgt_sents_var[1:].view(-1)).view(-1, len(src_sents))
+                                                                    tgt_sents_var.view(-1)).view(-1, len(src_sents))
             else:
                 # (tgt_sent_len, batch_size)
                 tgt_words_mask = (tgt_sents_var != 0).float()
@@ -357,7 +369,7 @@ def evaluate_ppl(model, dev_data, tkr, batch_size=32):
 
     with torch.no_grad():
         for src_sents, tgt_sents in batch_iter(dev_data, batch_size):
-            loss = -model(src_sents, tgt_sents).sum()
+            loss = -model.inference(src_sents, tgt_sents).sum()
 
             cum_loss += loss.item()
             tgt_word_num_to_predict = sum( [len(tkr.encode(s).ids)-1 for s in tgt_sents])
@@ -450,14 +462,18 @@ def train(args: Dict):
     model_save_path = args['save_to']
 
     src_tkr, tgt_tkr = get_tkrs(args)
-
-    model = NMT(embed_size=int(args['embed_size']),
+    if args['src'] == 'fr':
+        reverse=True
+    else:
+        reverse=False
+    model = NMT_AL(embed_size=int(args['embed_size']),
                 hidden_size=int(args['hidden_size']),
                 dropout_rate=float(args['dropout']),
                 input_feed=args['input_feed'],
                 label_smoothing=float(args['label_smoothing']),
                 src_tkr=src_tkr,
-                tgt_tkr=tgt_tkr)
+                tgt_tkr=tgt_tkr,
+                reverse=reverse)
     model.train()
 
     uniform_init = float(args['uniform_init'])
@@ -474,10 +490,10 @@ def train(args: Dict):
 
     model = model.to(device)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=float(args['lr']))
+    optimizers = [torch.optim.Adam(model.emb_al.parameters(), lr=float(args['lr'])), torch.optim.Adam(model.lstm.parameters(), lr=float(args['lr']))]
 
     num_trial = 0
-    train_iter = patience = cum_loss = report_loss = cum_tgt_words = report_tgt_words = 0
+    train_iter = patience = cum_loss = report_loss_emb = report_loss_lstm = cum_tgt_words = report_tgt_words = 0
     cum_examples = report_examples = epoch = valid_num = 0
     hist_valid_scores = []
     train_time = begin_time = time.time()
@@ -489,57 +505,58 @@ def train(args: Dict):
         for src_sents, tgt_sents in batch_iter(train_data, batch_size=train_batch_size, shuffle=True):
             train_iter += 1
 
-            optimizer.zero_grad()
+            # optimizer.zero_grad()
+            for i in range(len(optimizers)):
+                optimizers[i].zero_grad()
 
             batch_size = len(src_sents)
-            # print(src_sents, tgt_sents)
-            # src_lens = [len(s) for s in src_sents]
-            # tgt_lens = [len(s) for s in tgt_sents]
-            # if 2 in tgt_lens or 0 in src_lens:
-            #     print()
+ 
+            example_losses = model(src_sents, tgt_sents)
+            emb_loss = example_losses[0].item()
+            lstm_loss = example_losses[1].item()
 
-            # (batch_size)
-            example_losses = -model(src_sents, tgt_sents)
-            batch_loss = example_losses.sum()
-            loss = batch_loss / batch_size
-
-            loss.backward()
+            for i in range(len(example_losses)):
+                example_losses[i].backward()
+            
+            # loss.backward()
 
             # clip gradient
-            grad_norm = torch.nn.utils.clip_grad_norm(model.parameters(), clip_grad)
+            # grad_norm = torch.nn.utils.clip_grad_norm(model.emb_al.parameters(), clip_grad)
+            grad_norm = torch.nn.utils.clip_grad_norm(model.lstm.parameters(), clip_grad)
 
-            optimizer.step()
+            for i in range(len(optimizers)):
+                optimizers[i].step()
 
-            batch_losses_val = batch_loss.item()
-            report_loss += batch_losses_val
-            cum_loss += batch_losses_val
+            # batch_losses_= batch_loss.item()
+            report_loss_emb += emb_loss
+            report_loss_lstm += lstm_loss
+            cum_loss += report_loss_lstm + report_loss_emb
 
             tgt_words_num_to_predict = sum([len(tgt_tkr.encode(s).ids)-1 for s in tgt_sents])
 
             # tgt_words_num_to_predict = sum(len(s[1:]) for s in tgt_sents)  # omitting leading `<s>`
             report_tgt_words += tgt_words_num_to_predict
             cum_tgt_words += tgt_words_num_to_predict
-            report_examples += batch_size
+            report_examples += 1
             cum_examples += batch_size
 
             if train_iter % log_every == 0:
-                print('epoch %d, iter %d, avg. loss %.2f, avg. ppl %.2f ' \
-                      'cum. examples %d, speed %.2f words/sec, time elapsed %.2f sec' % (epoch, train_iter,
-                                                                                         report_loss / report_examples,
-                                                                                         math.exp(report_loss / report_tgt_words),
-                                                                                         cum_examples,
-                                                                                         report_tgt_words / (time.time() - train_time),
-                                                                                         time.time() - begin_time), file=sys.stderr)
+                print(f'epoch {epoch}, iter {train_iter}, emb loss {round(report_loss_emb/report_examples,3)}, lstm loss {round(report_loss_lstm/report_examples, 3)}')
+                # print('epoch %d, iter %d, avg. loss %.2f, avg. ppl %.2f ' \
+                #       'cum. examples %d, speed %.2f words/sec, time elapsed %.2f sec' % (epoch, train_iter,
+                #                                                                          report_loss / report_examples,
+                #                                                                          math.exp(report_loss / report_tgt_words),
+                #                                                                          cum_examples,
+                #                                                                          report_tgt_words / (time.time() - train_time),
+                #                                                                          time.time() - begin_time), file=sys.stderr)
+                                                                                         
 
                 train_time = time.time()
-                report_loss = report_tgt_words = report_examples = 0.
+                report_loss_emb = report_loss_lstm = report_tgt_words = report_examples = 0.
 
             # perform validation
             if train_iter % valid_niter == 0:
-                print('epoch %d, iter %d, cum. loss %.2f, cum. ppl %.2f cum. examples %d' % (epoch, train_iter,
-                                                                                         cum_loss / cum_examples,
-                                                                                         np.exp(cum_loss / cum_tgt_words),
-                                                                                         cum_examples), file=sys.stderr)
+                # print(f'epoch {epoch}, iter {train_iter}, emb loss {round(report_loss_emb/report_examples,3)}, lstm loss {round(report_loss_lstm/report_examples, 3)}')
 
                 cum_loss = cum_examples = cum_tgt_words = 0.
                 valid_num += 1
@@ -547,7 +564,7 @@ def train(args: Dict):
                 print('begin validation ...', file=sys.stderr)
 
                 # compute dev. ppl and bleu
-                dev_ppl = evaluate_ppl(model, dev_data, tgt_tkr, batch_size=128)   # dev batch size can be a bit larger
+                dev_ppl = evaluate_ppl(model, dev_data, tgt_tkr, batch_size=32)   # dev batch size can be a bit larger
                 valid_metric = -dev_ppl
 
                 print('validation: iter %d, dev. ppl %f' % (train_iter, dev_ppl), file=sys.stderr)
@@ -561,7 +578,8 @@ def train(args: Dict):
                     model.save(model_save_path)
 
                     # also save the optimizers' state
-                    torch.save(optimizer.state_dict(), model_save_path + '.optim')
+                    torch.save(optimizers[0].state_dict(), model_save_path + '.emb' + '.optim')
+                    torch.save(optimizers[1].state_dict(), model_save_path + '.lstm' + '.optim')
                 elif patience < int(args['patience']):
                     patience += 1
                     print('hit patience %d' % patience, file=sys.stderr)
@@ -574,7 +592,7 @@ def train(args: Dict):
                             exit(0)
 
                         # decay lr, and restore from previously best checkpoint
-                        lr = optimizer.param_groups[0]['lr'] * float(args['lr_decay'])
+                        lr = optimizers[0].param_groups[0]['lr'] * float(args['lr_decay'])
                         print('load previously best model and decay learning rate to %f' % lr, file=sys.stderr)
 
                         # load model
@@ -583,10 +601,12 @@ def train(args: Dict):
                         model = model.to(device)
 
                         print('restore parameters of the optimizers', file=sys.stderr)
-                        optimizer.load_state_dict(torch.load(model_save_path + '.optim'))
-
+                        optimizers[0].load_state_dict(torch.load(model_save_path + '.emb' + '.optim'))
+                        optimizers[1].load_state_dict(torch.load(model_save_path + '.lstm' + '.optim'))
                         # set new lr
-                        for param_group in optimizer.param_groups:
+                        for param_group in optimizers[0].param_groups:
+                            param_group['lr'] = lr
+                        for param_group in optimizers[1].param_groups:
                             param_group['lr'] = lr
 
                         # reset patience
@@ -597,7 +617,7 @@ def train(args: Dict):
                     exit(0)
 
 
-def beam_search(model: NMT, test_data_src: List[List[str]], beam_size: int, max_decoding_time_step: int) -> List[List[Hypothesis]]:
+def beam_search(model: NMT_AL, test_data_src: List[List[str]], beam_size: int, max_decoding_time_step: int) -> List[List[Hypothesis]]:
     was_training = model.training
     model.eval()
 

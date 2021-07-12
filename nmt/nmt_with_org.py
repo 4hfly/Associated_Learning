@@ -81,9 +81,16 @@ class NMT(nn.Module):
         self.to_input_tensor = to_input_tensor
 
         # initialize neural network layers...
+        # <s>: 1
+        # </s>: 2
 
-        self.src_embed = nn.Embedding(25000, embed_size, padding_idx=src_tkr.encode('[PAD]').ids[0])
-        self.tgt_embed = nn.Embedding(25000, embed_size, padding_idx=tgt_tkr.encode('[PAD]').ids[0])
+        self.src_embed = nn.Embedding(25000, embed_size, padding_idx=src_tkr.token_to_id('<pad>'))
+        self.tgt_embed = nn.Embedding(25000, embed_size, padding_idx=tgt_tkr.token_to_id('<pad>'))
+        # sos = tgt_tkr.token_to_id("<s>")
+        # eos = tgt_tkr.token_to_id("</s>")
+        # pad = tgt_tkr.token_to_id("<pad>")
+        # print(sos, eos, pad)
+        # raise Exception('ok')
 
         self.encoder_lstm = nn.LSTM(embed_size, hidden_size, bidirectional=True)
         decoder_lstm_input = embed_size + hidden_size if self.input_feed else embed_size
@@ -130,9 +137,10 @@ class NMT(nn.Module):
 
         # (src_sent_len, batch_size)
         src_sents_var, src_sents_len = self.to_input_tensor(src_sents, self.src_tkr, device=self.device)
+        # print(src_sents_var)
+        
         # (tgt_sent_len, batch_size)
-        tgt_sents_var, tgt_sents_len = self.to_input_tensor(tgt_sents, self.tgt_tkr, device=self.device)
-        # src_sents_len = [len(s) for s in src_sents]
+        tgt_sents_var, tgt_sents_len = self.to_input_tensor(tgt_sents, self.tgt_tkr, device=self.device, tgt=True)
 
         src_encodings, decoder_init_vec = self.encode(src_sents_var, src_sents_len)
 
@@ -300,9 +308,13 @@ class NMT(nn.Module):
         h_tm1 = dec_init_vec
         att_tm1 = torch.zeros(1, self.hidden_size, device=self.device)
 
-        eos_id = self.tgt_tkr.encode('[EOS]').ids[0]
+        eos_id = self.tgt_tkr.token_to_id('</s>')
+        sos_id = self.tgt_tkr.token_to_id('<s>')
 
-        hypotheses = [['[SOS]']]
+        print('sos', sos_id)
+        print('eos', eos_id)
+
+        hypotheses = [[sos_id]]
         hyp_scores = torch.zeros(len(hypotheses), dtype=torch.float, device=self.device)
         completed_hypotheses = []
 
@@ -319,7 +331,7 @@ class NMT(nn.Module):
                                                                            src_encodings_att_linear.size(1),
                                                                            src_encodings_att_linear.size(2))
 
-            y_tm1 = torch.tensor([self.tgt_tkr.encode(hyp[-1]).ids[0] for hyp in hypotheses], dtype=torch.long, device=self.device)
+            y_tm1 = torch.tensor([hyp[-1] for hyp in hypotheses], dtype=torch.long, device=self.device)
             y_tm1_embed = self.tgt_embed(y_tm1)
 
             if self.input_feed:
@@ -348,10 +360,10 @@ class NMT(nn.Module):
                 prev_hyp_id = prev_hyp_id.item()
                 hyp_word_id = hyp_word_id.item()
                 cand_new_hyp_score = cand_new_hyp_score.item()
-                hyp_word = self.tgt_tkr.decode([hyp_word_id])
- 
+                # hyp_word = self.tgt_tkr.decode([hyp_word_id])
+                hyp_word = hyp_word_id
                 new_hyp_sent = hypotheses[prev_hyp_id] + [hyp_word]
-                if hyp_word == '[EOS]':
+                if hyp_word == '</s>':
                     completed_hypotheses.append(Hypothesis(value=new_hyp_sent[1:-1],
                                                            score=cand_new_hyp_score))
                 else:
@@ -367,6 +379,7 @@ class NMT(nn.Module):
             att_tm1 = att_t[live_hyp_ids]
 
             hypotheses = new_hypotheses
+            # raise Exception('ok')
             hyp_scores = torch.tensor(new_hyp_scores, dtype=torch.float, device=self.device)
 
         if len(completed_hypotheses) == 0:
@@ -374,7 +387,7 @@ class NMT(nn.Module):
                                                    score=hyp_scores[0].item()))
 
         completed_hypotheses.sort(key=lambda hyp: hyp.score, reverse=True)
-
+        # print(completed_hypotheses)
         return completed_hypotheses
 
     def sample(self, src_sents: List[List[str]], sample_size=5, max_decoding_time_step=100) -> List[Hypothesis]:
@@ -390,9 +403,9 @@ class NMT(nn.Module):
                 score: float: the log-likelihood of the target sentence
         """
 
-        src_sents_var = self.to_input_tensor(src_sents, self.src_tkr, self.device)
+        src_sents_var, src_sents_len = self.to_input_tensor(src_sents, self.src_tkr, self.device)
 
-        src_encodings, dec_init_vec = self.encode(src_sents_var, [len(sent) for sent in src_sents])
+        src_encodings, dec_init_vec = self.encode(src_sents_var, src_sents_len)
         src_encodings_att_linear = self.att_src_linear(src_encodings)
 
         h_tm1 = dec_init_vec
@@ -404,17 +417,17 @@ class NMT(nn.Module):
         src_encodings = src_encodings.repeat(sample_size, 1, 1)
         src_encodings_att_linear = src_encodings_att_linear.repeat(sample_size, 1, 1)
 
-        src_sent_masks = self.get_attention_mask(src_encodings, [len(sent) for _ in range(sample_size) for sent in src_sents])
+        src_sent_masks = self.get_attention_mask(src_encodings, src_sents_len)
 
         h_tm1 = (h_tm1[0].repeat(sample_size, 1), h_tm1[1].repeat(sample_size, 1))
 
         att_tm1 = torch.zeros(total_sample_size, self.hidden_size, device=self.device)
 
-        eos_id = self.tgt_tkr.encode('[EOS]').ids[0]
+        eos_id = self.tgt_tkr.encode('</s>').ids[0]
         sample_ends = torch.zeros(total_sample_size, dtype=torch.uint8, device=self.device)
         sample_scores = torch.zeros(total_sample_size, device=self.device)
 
-        samples = [torch.tensor([self.tgt_tkr.encode('[SOS]').ids[0]] * total_sample_size, dtype=torch.long, device=self.device)]
+        samples = [torch.tensor([self.tgt_tkr.encode('<s>').ids[0]] * total_sample_size, dtype=torch.long, device=self.device)]
 
         t = 0
         while t < max_decoding_time_step:
@@ -543,7 +556,10 @@ def compute_corpus_level_bleu_score(references: List[List[str]], hypotheses: Lis
         bleu_score: corpus-level BLEU score
     """
 
-    if references[0][0] == '<s>':
+    print(references[1:5])
+    print(hypotheses[1:5])
+
+    if references[0][0] == '[SOS]':
         references = [ref[1:-1] for ref in references]
 
     bleu_score = corpus_bleu([[ref] for ref in references],
@@ -560,7 +576,7 @@ def get_tkrs(args):
         ])
     src_tkr.pre_tokenizer = ByteLevel()
     src_tkr.decoder = ByteLevelDecoder()
-    src_tkr.model = BPE(args["src_tkr"]+'vocab.json', args["src_tkr"]+'merges.txt')
+    src_tkr.model = BPE(args["src_tkr"]+'/vocab.json', args["src_tkr"]+'/merges.txt')
 
     tgt_tkr = Tokenizer(BPE())
     tgt_tkr.normalizer = Sequence([
@@ -569,7 +585,7 @@ def get_tkrs(args):
         ])
     tgt_tkr.pre_tokenizer = ByteLevel()
     tgt_tkr.decoder = ByteLevelDecoder()
-    tgt_tkr.model = BPE(args["tgt_tkr"]+'vocab.json', args["tgt_tkr"]+'merges.txt')
+    tgt_tkr.model = BPE(args["tgt_tkr"]+'/vocab.json', args["tgt_tkr"]+'/merges.txt')
     return src_tkr, tgt_tkr
 
 
@@ -646,8 +662,9 @@ def train(args: Dict):
 
     while True:
         epoch += 1
-
-        for src_sents, tgt_sents in batch_iter(train_data, batch_size=train_batch_size, shuffle=False):
+        torch.cuda.empty_cache()
+        
+        for src_sents, tgt_sents in batch_iter(train_data, batch_size=train_batch_size, shuffle=True):
             train_iter += 1
 
             optimizer.zero_grad()
@@ -708,7 +725,7 @@ def train(args: Dict):
                 print('begin validation ...', file=sys.stderr)
 
                 # compute dev. ppl and bleu
-                dev_ppl = evaluate_ppl(model, dev_data, tgt_tkr, batch_size=128)   # dev batch size can be a bit larger
+                dev_ppl = evaluate_ppl(model, dev_data, tgt_tkr, batch_size=32)   # dev batch size can be a bit larger
                 valid_metric = -dev_ppl
 
                 print('validation: iter %d, dev. ppl %f' % (train_iter, dev_ppl), file=sys.stderr)
@@ -796,6 +813,10 @@ def decode(args: Dict[str, str]):
     hypotheses = beam_search(model, test_data_src,
                              beam_size=int(args['beam_size']),
                              max_decoding_time_step=int(args['max_decoding_time_step']))
+    # perform target sentence decode
+    src_tkr, tgt_tkr = get_tkrs(args)
+    top_hypotheses = [hyps[0] for hyps in hypotheses]
+    top_hypotheses = [tgt_tkr.decode(t).split() for t in top_hypotheses]
 
     if args['test_tgt']:
         top_hypotheses = [hyps[0] for hyps in hypotheses]
@@ -824,10 +845,8 @@ def main():
 
     if args['train']:
         train(args)
-    elif args['decode']:
+    if args['decode']:
         decode(args)
-    else:
-        raise RuntimeError(f'invalid run mode')
 
 
 if __name__ == '__main__':

@@ -11,6 +11,7 @@ from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
 class EmbAL(nn.Module):
     def __init__(self, emb_dim, vocab_size=25000):
+        super(EmbAL, self).__init__()
         self.f = nn.Embedding(vocab_size, emb_dim)
         self.g = nn.Embedding(vocab_size, emb_dim)
         self.decoder_f = nn.Linear(emb_dim, vocab_size)
@@ -29,7 +30,11 @@ class EmbAL(nn.Module):
 
         emb_x = self.f(x)
         emb_y = self.g(y)
-        loss_b = self.mse_loss(emb_x, emb_y, reverse) # bridge loss
+        loss_b = self.mse_loss(emb_x, emb_y) # bridge loss
+        # print(emb_y.shape)
+        # print(emb_x.shape)
+        # print(x.shape)
+        # print(y.shape)
         if not reverse:
             loss_d = self.decode_loss(emb_y, y, reverse)
         else:
@@ -56,16 +61,21 @@ class EmbAL(nn.Module):
             out = F.logsoftmax(self.decoder_f(x))
         return out
 
-    def mse_loss(self, x, y):
+    def mse_loss(self, x, y, reverse=False):
 
         '''
         input params:
             x: (src_len, batch_size, emb_dim)
             y: (tgt_len, batch_size, emb_dim)
         '''
-        x = x[x.nonzero(as_tuple=True)].view(x.size(0), x.size(1), -1).mean(1)
-        y = y[y.nonzero(as_tuple=True)].view(y.size(0), y.size(1), -1).mean(1)
-        return F.mse_loss(x, y)
+
+        x = x[x.nonzero(as_tuple=True)].view(x.size(0), x.size(1), -1).mean(0)
+        y = y[y.nonzero(as_tuple=True)].view(y.size(0), y.size(1), -1).mean(0)
+
+        if not reverse:
+            return F.mse_loss(x, y)
+        else:
+            return F.mse_loss(y, x)
     
     def decode_loss(self, pred, tgt, reverse=False):
 
@@ -79,11 +89,13 @@ class EmbAL(nn.Module):
         '''
 
         if not reverse:
-            word_prob = F.logsoftmax(self.decoder_g(pred)) # readout layer 
+            word_prob = F.log_softmax(self.decoder_g(pred),dim=-1) # readout layer 
         else:
-            word_prob = F.logsoftmax(self.decoder_f(pred)) # readout layer
+            word_prob = F.log_softmax(self.decoder_f(pred), dim=-1) # readout layer
+        # print(word_prob.shape)
+        # print(tgt.shape)
         tgt_words_to_pred = torch.count_nonzero(tgt)
-        prob = -self.labelsmoothingloss(word_prob.reshape(-1, word_prob.size(-1)), tgt[1:].view(-1)).view(-1, pred.size(1)).sum(0)
+        prob = -self.labelsmoothingloss(word_prob.reshape(-1, word_prob.size(-1)), tgt.view(-1)).view(-1, pred.size(1)).sum(0)
         prob = prob.sum() / pred.size(1)
         return prob
 
@@ -91,6 +103,7 @@ class EmbAL(nn.Module):
 
 class LSTMAL(nn.Module):
     def __init__(self, input_dim, hid_dim, bidirectional, dropout, input_feed, reverse):
+        super(LSTMAL, self).__init__()
 
         self.hid_dim = hid_dim
         self.input_feed = input_feed
@@ -104,7 +117,7 @@ class LSTMAL(nn.Module):
         decoder_lstm_input = input_dim + hid_dim if self.input_feed else input_dim
 
         self.decoder_f = nn.LSTMCell(decoder_lstm_input, hid_dim)
-        self.deocder_g = nn.LSTMCell(decoder_lstm_input, hid_dim)
+        self.decoder_g = nn.LSTMCell(decoder_lstm_input, hid_dim)
 
         self.att_src_f_linear = nn.Linear(self.hid_dim * 2, self.hid_dim, bias=False)
         self.att_src_g_linear = nn.Linear(self.hid_dim * 2, self.hid_dim, bias=False)
@@ -115,8 +128,11 @@ class LSTMAL(nn.Module):
 
         self.reverse = reverse
 
+    @property
+    def device(self) -> torch.device:
+        return self.decoder_f.weight.device
 
-    def forward(self, x, y, src_sent_lens, tgt_sent_lens, tgt_emb, tgt_sents, reverse=False):
+    def forward(self, x, y, src_sent_lens, tgt_sent_lens, tgt_emb, tgt_sents_var, reverse=False):
         '''
         input params:
             x: (src_len, batch_size, emb_dim)
@@ -131,7 +147,7 @@ class LSTMAL(nn.Module):
         out_x, _ = pad_packed_sequence(out_x)
         out_y, _ = pad_packed_sequence(out_y)
 
-        loss_b = self.mse_loss(h_x, h_y)
+        loss_b = self.mse_loss(c_x, c_y)
 
         if not reverse: # en 2 fr
 
@@ -139,8 +155,8 @@ class LSTMAL(nn.Module):
             dec_init_cell = self.decoder_g_cell_init(torch.cat([c_y[0], c_y[1]], dim=1))
             dec_init_state = torch.tanh(dec_init_cell)    
             src_sent_masks = self.get_attention_mask(src_encodings, src_sent_lens)
-            attn_vecs = self.decode(out_x, src_sent_masks, (dec_init_state, dec_init_cell), tgt_sents, tgt_emb, True)    
-            loss_d = self.decode_loss(attn_vecs, x)
+            attn_vecs = self.decode(src_encodings, src_sent_masks, (dec_init_state, dec_init_cell), tgt_sents_var, tgt_emb, self.reverse)    
+            loss_d = self.decode_loss(attn_vecs, y)
 
         else: # fr 2 en
 
@@ -148,8 +164,8 @@ class LSTMAL(nn.Module):
             dec_init_cell = self.decoder_f_cell_init(torch.cat([c_x[0], c_x[1]], dim=1))
             dec_init_state = torch.tanh(dec_init_cell)    
             src_sent_masks = self.get_attention_mask(src_encodings, src_sent_lens)
-            attn_vecs = self.decode(out_x, src_sent_masks, (dec_init_state, dec_init_cell), tgt_sents, tgt_emb)
-            loss_d = self.decode_loss(attn_vecs, y)
+            attn_vecs = self.decode(src_encodings, src_sent_masks, (dec_init_state, dec_init_cell), tgt_sents_var, tgt_emb, self.reverse)
+            loss_d = self.decode_loss(attn_vecs, x)
 
         self.loss = loss_b + loss_d
 
@@ -158,21 +174,25 @@ class LSTMAL(nn.Module):
         for e_id, src_len in enumerate(src_sents_len):
             src_sent_masks[e_id, src_len:] = 1
 
-        return src_sent_masks.to(self.device)
+        return src_sent_masks.to(src_encodings.device)
 
     def decode(self, src_encodings, src_sent_masks, decoder_init_vec, tgt_sents_var, tgt_emb, reverse=False):
 
         # (batch_size, src_sent_len, hidden_size)
-        src_encoding_att_linear = self.att_src_linear(src_encodings)
+        if not reverse:
+            src_encoding_att_linear = self.att_src_g_linear(src_encodings)
+        else:
+            src_encoding_att_linear = self.att_src_f_linear(src_encodings)
 
         batch_size = src_encodings.size(0)
 
         # initialize the attentional vector
-        att_tm1 = torch.zeros(batch_size, self.hid_dim, device=self.device)
+        att_tm1 = torch.zeros(batch_size, self.hid_dim, device=src_encodings.device)
 
         # (tgt_sent_len, batch_size, embed_size)
         # here we omit the last word, which is always </s>.
         # Note that the embedding of </s> is not used in decoding
+
         tgt_word_embeds = tgt_emb(tgt_sents_var) # tgt_emb is a layer
 
         h_tm1 = decoder_init_vec
@@ -185,11 +205,12 @@ class LSTMAL(nn.Module):
             if self.input_feed:
                 # input feeding: concate y_tm1 and previous attentional vector
                 # (batch_size, hidden_size + embed_size)
+
                 x = torch.cat([y_tm1_embed, att_tm1], dim=-1)
             else:
                 x = y_tm1_embed
 
-            (h_t, cell_t), att_t, alpha_t = self.step(x, h_tm1, src_encodings, src_encoding_att_linear, src_sent_masks)
+            (h_t, cell_t), att_t, alpha_t = self.step(x, h_tm1, src_encodings, src_encoding_att_linear, src_sent_masks, self.reverse)
 
             att_tm1 = att_t
             h_tm1 = h_t, cell_t
@@ -232,14 +253,14 @@ class LSTMAL(nn.Module):
         return ctx_vec, softmaxed_att_weight
         
     def decode_loss(self, x, y):
-        x = x.reshape(-1, x.size(-1))
-        y = y.reshape(-1, y.size(-1))
-        return F.mse_loss(x,y)
+        x = x.reshape(x.size(1), -1)
+        y = y.reshape(y.size(1), -1)
+        return F.mse_loss(x,y, reduction='sum')/x.size(1)
 
     def mse_loss(self, x, y):
         x = x.reshape(-1, self.hid_dim)
         y = y.reshape(-1, self.hid_dim)
-        return F.mse_loss(x, y)
+        return F.mse_loss(x, y, reduction='sum') / x.size(1)
 
     def inference(self, emb_x, src_sent_lens, tgt_emb, tgt_sents_var, reverse):
         if not reverse:
@@ -251,7 +272,7 @@ class LSTMAL(nn.Module):
             dec_init_cell = self.decoder_g_cell_init(torch.cat([c_x[0], c_x[1]], dim=1))
             dec_init_state = torch.tanh(dec_init_cell)    
             src_sent_masks = self.get_attention_mask(src_encodings, src_sent_lens)
-            attn_vecs = self.decode(out_x, src_sent_masks, (dec_init_state, dec_init_cell), tgt_sents_var, tgt_emb, True)    
+            attn_vecs = self.decode(src_encodings, src_sent_masks, (dec_init_state, dec_init_cell), tgt_sents_var, tgt_emb, reverse)    
 
         else:
             packed_x = pack_padded_sequence(emb_x, src_sent_lens, enforce_sorted=False)
@@ -262,5 +283,5 @@ class LSTMAL(nn.Module):
             dec_init_cell = self.decoder_f_cell_init(torch.cat([c_x[0], c_x[1]], dim=1))
             dec_init_state = torch.tanh(dec_init_cell)    
             src_sent_masks = self.get_attention_mask(src_encodings, src_sent_lens)
-            attn_vecs = self.decode(out_x, src_sent_masks, (dec_init_state, dec_init_cell), tgt_sents_var, tgt_emb, True)    
+            attn_vecs = self.decode(src_encodings, src_sent_masks, (dec_init_state, dec_init_cell), tgt_sents_var, tgt_emb, reverse)    
         return attn_vecs
