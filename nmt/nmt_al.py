@@ -9,6 +9,7 @@ from typing import List, Tuple, Dict, Set, Union
 from docopt import docopt
 from tqdm import tqdm
 from nltk.translate.bleu_score import corpus_bleu, sentence_bleu, SmoothingFunction
+import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
@@ -143,7 +144,7 @@ class NMT_AL(nn.Module):
                 score: float: the log-likelihood of the target sentence
         """
 
-        src_sents_var = self.vocab.src.to_input_tensor([src_sent], self.device)
+        src_sents_var = self.to_input_tensor([src_sent], self.src_tkr, self.device)
 
         src_encodings, dec_init_vec = self.encode(src_sents_var, [len(src_sent)])
         src_encodings_att_linear = self.att_src_linear(src_encodings)
@@ -151,7 +152,7 @@ class NMT_AL(nn.Module):
         h_tm1 = dec_init_vec
         att_tm1 = torch.zeros(1, self.hidden_size, device=self.device)
 
-        eos_id = self.vocab.tgt['</s>']
+        eos_id = self.tgt_tkr.token_to_id('</s>')
 
         hypotheses = [['<s>']]
         hyp_scores = torch.zeros(len(hypotheses), dtype=torch.float, device=self.device)
@@ -170,7 +171,7 @@ class NMT_AL(nn.Module):
                                                                            src_encodings_att_linear.size(1),
                                                                            src_encodings_att_linear.size(2))
 
-            y_tm1 = torch.tensor([self.vocab.tgt[hyp[-1]] for hyp in hypotheses], dtype=torch.long, device=self.device)
+            y_tm1 = torch.tensor([self.tgt_tkr.token_to_id(hyp[-1]) for hyp in hypotheses], dtype=torch.long, device=self.device)
             y_tm1_embed = self.tgt_embed(y_tm1)
 
             if self.input_feed:
@@ -188,8 +189,8 @@ class NMT_AL(nn.Module):
             contiuating_hyp_scores = (hyp_scores.unsqueeze(1).expand_as(log_p_t) + log_p_t).view(-1)
             top_cand_hyp_scores, top_cand_hyp_pos = torch.topk(contiuating_hyp_scores, k=live_hyp_num)
 
-            prev_hyp_ids = top_cand_hyp_pos / len(self.vocab.tgt)
-            hyp_word_ids = top_cand_hyp_pos % len(self.vocab.tgt)
+            prev_hyp_ids = top_cand_hyp_pos / 25000
+            hyp_word_ids = top_cand_hyp_pos % 25000
 
             new_hypotheses = []
             live_hyp_ids = []
@@ -589,6 +590,11 @@ def train(args: Dict):
                         print('hit #%d trial' % num_trial, file=sys.stderr)
                         if num_trial == int(args['max_num_trial']):
                             print('early stop!', file=sys.stderr)
+                            x = [i for i in range(len(hist_valid_scores))]
+                            y = [-h for h in hist_valid_scores]
+                            plt.plot(x,y)
+                            src = args['src']
+                            plt.savefig(f'nmt-al-src-{src}.png')    
                             exit(0)
 
                         # decay lr, and restore from previously best checkpoint
@@ -614,6 +620,11 @@ def train(args: Dict):
 
                 if epoch == int(args['max_epoch']):
                     print('reached maximum number of epochs!', file=sys.stderr)
+                    x = [i for i in range(len(hist_valid_scores))]
+                    y = [-h for h in hist_valid_scores]
+                    plt.plot(x,y)
+                    src = args['src']
+                    plt.savefig(f'nmt-al-src-{src}.png')    
                     exit(0)
 
 

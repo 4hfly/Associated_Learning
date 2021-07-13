@@ -47,6 +47,8 @@ from typing import List, Tuple, Dict, Set, Union
 from docopt import docopt
 from tqdm import tqdm
 from nltk.translate.bleu_score import corpus_bleu, sentence_bleu, SmoothingFunction
+import matplotlib.pyplot as plt
+
 
 import torch
 import torch.nn as nn
@@ -311,9 +313,6 @@ class NMT(nn.Module):
         eos_id = self.tgt_tkr.token_to_id('</s>')
         sos_id = self.tgt_tkr.token_to_id('<s>')
 
-        print('sos', sos_id)
-        print('eos', eos_id)
-
         hypotheses = [[sos_id]]
         hyp_scores = torch.zeros(len(hypotheses), dtype=torch.float, device=self.device)
         completed_hypotheses = []
@@ -331,7 +330,9 @@ class NMT(nn.Module):
                                                                            src_encodings_att_linear.size(1),
                                                                            src_encodings_att_linear.size(2))
 
+            # y_tm1 = torch.tensor([self.tgt_tkr.token_to_id(hyp[-1]) for hyp in hypotheses], dtype=torch.long, device=self.device)
             y_tm1 = torch.tensor([hyp[-1] for hyp in hypotheses], dtype=torch.long, device=self.device)
+
             y_tm1_embed = self.tgt_embed(y_tm1)
 
             if self.input_feed:
@@ -363,7 +364,7 @@ class NMT(nn.Module):
                 # hyp_word = self.tgt_tkr.decode([hyp_word_id])
                 hyp_word = hyp_word_id
                 new_hyp_sent = hypotheses[prev_hyp_id] + [hyp_word]
-                if hyp_word == '</s>':
+                if hyp_word == eos_id:
                     completed_hypotheses.append(Hypothesis(value=new_hyp_sent[1:-1],
                                                            score=cand_new_hyp_score))
                 else:
@@ -388,6 +389,7 @@ class NMT(nn.Module):
 
         completed_hypotheses.sort(key=lambda hyp: hyp.score, reverse=True)
         # print(completed_hypotheses)
+        # raise Exception('ok')
         return completed_hypotheses
 
     def sample(self, src_sents: List[List[str]], sample_size=5, max_decoding_time_step=100) -> List[Hypothesis]:
@@ -423,11 +425,11 @@ class NMT(nn.Module):
 
         att_tm1 = torch.zeros(total_sample_size, self.hidden_size, device=self.device)
 
-        eos_id = self.tgt_tkr.encode('</s>').ids[0]
+        eos_id = self.tgt_tkr.token_to_id('</s>').ids[0]
         sample_ends = torch.zeros(total_sample_size, dtype=torch.uint8, device=self.device)
         sample_scores = torch.zeros(total_sample_size, device=self.device)
 
-        samples = [torch.tensor([self.tgt_tkr.encode('<s>').ids[0]] * total_sample_size, dtype=torch.long, device=self.device)]
+        samples = [torch.tensor([self.tgt_tkr.token_to_id('<s>')] * total_sample_size, dtype=torch.long, device=self.device)]
 
         t = 0
         while t < max_decoding_time_step:
@@ -559,11 +561,30 @@ def compute_corpus_level_bleu_score(references: List[List[str]], hypotheses: Lis
     print(references[1:5])
     print(hypotheses[1:5])
 
-    if references[0][0] == '[SOS]':
+    if references[0][0] == '<s>':
         references = [ref[1:-1] for ref in references]
 
+    # for i in range(len(references)):
+    #     references[i] = [x.split() for x in references[i]]
+    # for i in range(len(hypotheses)):
+    #     hypotheses[i] = [x.split() for x in hypotheses[i]]
+    
+    print(references[0])
+    print(hypotheses[0])
+    print(len(references))
+    print(len(hypotheses))
+    bleu_score = 0
+    for i in range(len(references)):
+        bleu_score += sentence_bleu(references[i], hypotheses[i])
+    print(bleu_score)
+    bleu_score = bleu_score*100 / len(references)
+    print(bleu_score)
+    # bleu_score = corpus_bleu([[ref] for ref in references],
+    #                          [[hyp] for hyp in hypotheses])
+    # print(bleu_score)
+    raise Exception('ok') # list of list of token(sent bleu), list of list of list of token(corpus bleu)
     bleu_score = corpus_bleu([[ref] for ref in references],
-                             [hyp.value for hyp in hypotheses])
+                             [[hyp] for hyp in hypotheses])
 
     return bleu_score
 
@@ -749,6 +770,11 @@ def train(args: Dict):
                         print('hit #%d trial' % num_trial, file=sys.stderr)
                         if num_trial == int(args['max_num_trial']):
                             print('early stop!', file=sys.stderr)
+                            x = [i for i in range(len(hist_valid_scores))]
+                            y = [-h for h in hist_valid_scores]
+                            plt.plot(x,y)
+                            src = args['src']
+                            plt.savefig(f'nmt-src-{src}.png')   
                             exit(0)
 
                         # decay lr, and restore from previously best checkpoint
@@ -772,8 +798,13 @@ def train(args: Dict):
 
                 if epoch == int(args['max_epoch']):
                     print('reached maximum number of epochs!', file=sys.stderr)
+                    x = [i for i in range(len(hist_valid_scores))]
+                    y = [-h for h in hist_valid_scores]
+                    plt.plot(x,y)
+                    src = args['src']
+                    plt.savefig(f'nmt-src-{src}.png')   
                     exit(0)
-
+ 
 
 def beam_search(model: NMT, test_data_src: List[List[str]], beam_size: int, max_decoding_time_step: int) -> List[List[Hypothesis]]:
     was_training = model.training
@@ -810,23 +841,29 @@ def decode(args: Dict[str, str]):
     if args['cuda']:
         model = model.to(torch.device("cuda:0"))
 
+    src_tkr, tgt_tkr = get_tkrs(args)
+
+    test_data_tgt = [tgt_tkr.encode(t).ids for t in test_data_tgt]
+    test_data_tgt = [tgt_tkr.decode(t) for t in test_data_tgt]
+
     hypotheses = beam_search(model, test_data_src,
                              beam_size=int(args['beam_size']),
                              max_decoding_time_step=int(args['max_decoding_time_step']))
     # perform target sentence decode
-    src_tkr, tgt_tkr = get_tkrs(args)
-    top_hypotheses = [hyps[0] for hyps in hypotheses]
-    top_hypotheses = [tgt_tkr.decode(t).split() for t in top_hypotheses]
 
     if args['test_tgt']:
         top_hypotheses = [hyps[0] for hyps in hypotheses]
+        top_hypotheses = [tgt_tkr.decode(t.value).split() for t in top_hypotheses]
+        test_data_tgt = [t.split() for t in test_data_tgt]
+        print(top_hypotheses[0])
+        print(test_data_tgt[0])
         bleu_score = compute_corpus_level_bleu_score(test_data_tgt, top_hypotheses)
         print(f'Corpus BLEU: {bleu_score}', file=sys.stderr)
 
     with open(args['test_pred_file'], 'w') as f:
         for src_sent, hyps in zip(test_data_src, hypotheses):
             top_hyp = hyps[0]
-            hyp_sent = ' '.join(top_hyp.value)
+            hyp_sent = ' '.join(top_hyp)
             f.write(hyp_sent + '\n')
 
 
