@@ -30,8 +30,8 @@ CONFIG = {
     "batch_first": False,
     "dropout": 0,
     "bidirectional": False,
-    "vocab_size": 25000,
-    "embedding_dim": 256
+    "vocab_size": (25000, 25000),
+    "embedding_dim": (256, 256)
 }
 
 
@@ -100,7 +100,7 @@ class ALComponent(nn.Module):
             loss_b = self.criterion(self.bx(self._s), self._t)
             loss_d = self.criterion(self._t_prime, self.y)
         else:
-            loss_b = self.criterion(self._s, self.by(self._t))
+            loss_b = self.criterion(self.by(self._t), self._s)
             loss_d = self.criterion(self._s_prime, self.x)
 
         return loss_b + loss_d
@@ -326,17 +326,18 @@ class LSTMAL(ALComponent):
     def loss(self):
 
         if not self.reverse:
-            loss_b = self.criterion(
-                self.bx(self._h_nx), self._h_ny).view(-1, self._h_ny[1], self._h_ny[2]).mean()
-            loss_d = self.criterion(
-                self._t_prime, self.y).view(-1, self.y[1], self.y[2]).mean()
-            return loss_b + loss_d
+            input = self.bx(self._h_nx).view(-1, self._h_nx.size()[2])
+            target = self._h_ny.view(-1, self._h_ny.size()[2])
+            loss_b = self.criterion(input, target)
+            # loss_d = self.criterion(self._t_prime, self.y)
+            return loss_b
         else:
-            loss_b = self.criterion(
-                self.bx(self._h_nx), self._h_ny).view(-1, self._h_ny[1], self._h_ny[2]).mean()
-            loss_d = self.criterion(
-                self._t_prime, self.y).view(-1, self.y[1], self.y[2]).mean()
-            return loss_b + loss_d
+            input = self.by(self._h_ny).view(-1, self._h_ny.size()[2])
+            target = self._h_nx.view(-1, self._h_nx.size()[2])
+            loss_b = self.criterion(input, target)
+            # loss_d = self.criterion(self._s_prime, self.x)
+
+            return loss_b
 
 
 class GRUAL(ALComponent):
@@ -418,17 +419,18 @@ class GRUAL(ALComponent):
 
     def loss(self):
 
+        # TODO: not readable
         if not self.reverse:
-            loss_b = self.criterion(
-                self.bx(self._h_nx), self._h_ny).view(-1, self._h_ny[1], self._h_ny[2]).mean()
+            loss_b = self.criterion(self.bx(
+                self._h_nx), self._h_ny).view(-1, self._h_ny.size()[1], self._h_ny.size()[2])
             loss_d = self.criterion(
-                self._t_prime, self.y).view(-1, self.y[1], self.y[2]).mean()
+                self._t_prime, self.y).view(-1, self.y.size()[1], self.y.size()[2])
             return loss_b + loss_d
         else:
-            loss_b = self.criterion(
-                self.bx(self._h_nx), self._h_ny).view(-1, self._h_ny[1], self._h_ny[2]).mean()
+            loss_b = self.criterion(self.self._h_nx, self.by(
+                self._h_ny)).view(-1, self._h_nx.size()[1], self._h_nx.size()[2])
             loss_d = self.criterion(
-                self._t_prime, self.y).view(-1, self.y[1], self.y[2]).mean()
+                self._s_prime, self.x).view(-1, self.x.size()[1], self.x.size()[2])
             return loss_b + loss_d
 
 
@@ -535,8 +537,8 @@ class EmbeddingAL(ALComponent):
 
     def __init__(
         self,
-        num_embeddings: Tuple[int, ...],
-        embedding_dim: Tuple[int, ...],
+        num_embeddings: Tuple[int, int],
+        embedding_dim: Tuple[int, int],
         padding_idx: int = 0,
         reverse: bool = False
     ) -> None:
@@ -552,10 +554,12 @@ class EmbeddingAL(ALComponent):
         # h function
         dx = nn.Linear(embedding_dim[0], num_embeddings[0])
         dy = nn.Linear(embedding_dim[1], num_embeddings[1])
-        self.labelsmoothingloss = LabelSmoothingLoss(0.1, num_embeddings)
 
         super(EmbeddingAL, self).__init__(
             mode, f, g, bx, by, dx, dy, reverse=reverse)
+
+        self.labelsmoothingloss = LabelSmoothingLoss(
+            0.1, num_embeddings[int(reverse)])
 
     def loss(self):
 
@@ -563,17 +567,23 @@ class EmbeddingAL(ALComponent):
         t = self._t
         s = s[s.nonzero(as_tuple=True)].view(-1, s.size(1), s.size(2)).mean(0)
         t = t[t.nonzero(as_tuple=True)].view(-1, t.size(1), t.size(2)).mean(0)
-        if self.reverse:
 
+        if not self.reverse:
             loss_b = self.criterion(s, t)
             loss_d = self.decode_loss(self._t, self.y)
+        else:
+            loss_b = self.criterion(t, s)
+            loss_d = self.decode_loss(self._s, self.x)
 
         return loss_b + loss_d
 
     def decode_loss(self, pred, label):
 
         m = nn.LogSoftmax(-1)
-        word_prob = m(self.decoder(pred))
+        if not self.reverse:
+            word_prob = m(self.dx(pred))
+        else:
+            word_prob = m(self.dy(pred))
         # TODO: 這個變數沒用到？
         tgt_words_to_pred = torch.count_nonzero(label)
         prob = -self.labelsmoothingloss(word_prob.reshape(-1, word_prob.size(-1)),
@@ -594,17 +604,15 @@ class ALNet(nn.Module):
     def __init__(
         self,
         mode: str,
-        input_size: int,
-        output_size: int,
         hidden_size: List[Tuple[int, int]],
+        num_embeddings: Tuple[int, int] = CONFIG["vocab_size"],
+        embedding_dim: Tuple[int, int] = CONFIG["embedding_dim"],
+        padding_idx: int = 0,
         num_layers: int = CONFIG["num_layers"],
         bias: bool = CONFIG["bias"],
         batch_first: bool = CONFIG["batch_first"],
         dropout: float = CONFIG["dropout"],
         bidirectional: bool = CONFIG["bidirectional"],
-        num_embeddings: int = CONFIG["vocab_size"],
-        embedding_dim: int = CONFIG["embedding_dim"],
-        padding_idx: int = 0,
         reverse: bool = False
     ) -> None:
         """
@@ -616,7 +624,7 @@ class ALNet(nn.Module):
         self.mode = mode
         model = self._mode[mode]
         self.emb = EmbeddingAL(
-            num_embeddings, embedding_dim, padding_idx=padding_idx)
+            num_embeddings, embedding_dim, padding_idx=padding_idx, reverse=reverse)
         # hidden_size: List[Tuple[int, int]]
         # e.g. [(256, 256), (128, 128), (64, 64)]
         # The following code will create an ordered dictionary, and the number
@@ -628,14 +636,23 @@ class ALNet(nn.Module):
         #     "layers_2": LSTMAL(256, 256, (128, 128)),
         #     "layers_3": LSTMAL(128, 128, ( 64,  64))
         # }
-        layers = [("layer_1", model(input_size, output_size, hidden_size[0]))]
+        kwargs = {
+            "num_layers": num_layers,
+            "bias": bias,
+            "batch_first": batch_first,
+            "dropout": dropout,
+            "bidirectional": bidirectional,
+        }
+        layers = [
+            ("layer_1", model(embedding_dim[0], embedding_dim[1], hidden_size[0], **kwargs))]
         for i, h in enumerate(hidden_size[1:]):
             layers.append((
                 f"layer_{i+2}",
                 model(
                     input_size=hidden_size[i][0],
                     output_size=hidden_size[i][1],
-                    hidden_size=h
+                    hidden_size=h,
+                    **kwargs
                 )
             ))
 
@@ -659,6 +676,14 @@ class ALNet(nn.Module):
             elif self.mode == "LSTM" or self.mode == "GRU":
                 return self.layers[f"layer_{choice}"](x, y, hx)
 
+    def loss(self):
+
+        sum = self.emb.loss()
+        for layer in list(self.layers.values()):
+            sum += layer.loss()
+
+        return sum
+
     def inference(self, x) -> Tensor:
 
         k: str
@@ -679,13 +704,15 @@ def test():
 
     inputs = torch.randint(1, 1000, (8, 2,))
     outputs = torch.randint(1, 1000, (8, 2,))
-    model = ALNet(64, 64, [(16, 16), (8, 8)])
+    model = ALNet("LSTM", [(512, 512), (256, 256)])
     optimizer = torch.optim.SGD(model.parameters(), lr=1e-4)
 
     epochs = 5
     for _ in range(epochs):
 
-        x_out, y_out = model(inputs, outputs)
+        x_s1, y_s1 = model(inputs, outputs)
+        x_s2, hx, y_s2, hy = model(x_s1, y_s1, choice=1)
+        x_out, hx, y_out, hy = model(x_s2, y_s2, choice=2)
         loss = model.loss()
 
         optimizer.zero_grad()
@@ -694,7 +721,7 @@ def test():
 
         # print(inputs.shape)
         # print(outputs.shape)
-        print(x_out.shape, y_out.shape)
+        print(x_out.size, y_out.size)
         print(loss.item())
 
 
