@@ -117,7 +117,7 @@ def batch_iter(data, src_tkr, tgt_tkr, batch_size, shuffle=False):
         # if i ==0:
         #     print(examples[0])
         examples = sorted(examples, key=lambda e: len(
-            src_tkr.Ence(e[0])), reverse=True)
+            src_tkr.Encode(e[0])), reverse=True)
         src_sents = [e[0] for e in examples]
         tgt_sents = [e[1] for e in examples]
 
