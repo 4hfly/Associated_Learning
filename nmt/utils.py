@@ -149,9 +149,9 @@ def to_input_tensor(sents, tkr, device: torch.device, tgt=False) -> torch.Tensor
         # in fact, the default value of out_type is int.
         # you may want to check some examples from the link:
         # https://github.com/google/sentencepiece/blob/master/python/README.md
-        word_ids = [[1]+tkr.encode(s).ids+[2] for s in sents]
+        word_ids = [[1]+tkr.encode(s)+[2] for s in sents]
     else:
-        word_ids = [tkr.encode(s).ids for s in sents] 
+        word_ids = [tkr.encode(s) for s in sents] 
 
     sents_len = [len(s) for s in word_ids]
     sents_t = input_transpose(word_ids, 0)
