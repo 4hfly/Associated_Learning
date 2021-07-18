@@ -142,6 +142,13 @@ def to_input_tensor(sents, tkr, device: torch.device, tgt=False) -> torch.Tensor
 
     if tgt:
         sents = [" "+s for s in sents]
+        # for spm, there is no 'ids' attribute in encoded object.
+        # therefore, here we output integer type instead.
+        # org: tkr.encode(s).ids
+        # spm: tkr.encode(s, out_type=int)
+        # in fact, the default value of out_type is int.
+        # you may want to check some examples from the link:
+        # https://github.com/google/sentencepiece/blob/master/python/README.md
         word_ids = [[1]+tkr.encode(s).ids+[2] for s in sents]
     else:
         word_ids = [tkr.encode(s).ids for s in sents] 

@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
+import sys
 
 import torch
 
-from nmt.nmt_with_org import NMT, get_tkrs, compute_corpus_level_bleu_score
+sys.path.append("../Associated_Learning/")
+from nmt.nmt_with_org import NMT, compute_corpus_level_bleu_score, get_tkrs
 
 args = {
     "src": "en",
-    "src_tkr": "test_data/sample/en/",
-    "tgt_tkr": "test_data/sample/fr/",
+    "src_tkr": "../data/tokenizer/spm/en/bpe.model",
+    "tgt_tkr": "../data/tokenizer/spm/fr/bpe.model",
 }
 
 src_tkr, tgt_tkr = get_tkrs(args)
@@ -23,6 +25,14 @@ MODEL = NMT(
 
 MODEL.train()
 # TODO: -*- ... settings ... -*-
+
+
+def test_tkrs():
+
+    encoded = src_tkr.Encode('<s> This is a test </s>')
+    assert src_tkr.Decode(encoded) == '<s> This is a test </s>'
+    encoded = tgt_tkr.Encode('<s> Bonjour, vous tous! Comment ça va 😁? </s>')
+    assert tgt_tkr.Decode(encoded) == '<s> Bonjour, vous tous! Comment ça va  ⁇ ? </s>'
 
 
 def test_decode():
@@ -65,3 +75,6 @@ def test_compute_corpus_level_bleu_score():
     output = compute_corpus_level_bleu_score(references, hypotheses)
 
     assert output == ans
+
+
+test_tkrs()

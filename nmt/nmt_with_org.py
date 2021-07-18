@@ -44,11 +44,13 @@ from collections import namedtuple
 
 import numpy as np
 from typing import List, Tuple, Dict, Set, Union
-from docopt import docopt
+# TODO: docopt is not accessed, remove it?
+# from docopt import docopt
 from tqdm import tqdm
+# TODO: same as SmoothingFunction.
 from nltk.translate.bleu_score import corpus_bleu, sentence_bleu, SmoothingFunction
 import matplotlib.pyplot as plt
-
+import sentencepiece as spm
 
 import torch
 import torch.nn as nn
@@ -86,25 +88,30 @@ class NMT(nn.Module):
         # <s>: 1
         # </s>: 2
 
-        self.src_embed = nn.Embedding(25000, embed_size, padding_idx=src_tkr.token_to_id('<pad>'))
-        self.tgt_embed = nn.Embedding(25000, embed_size, padding_idx=tgt_tkr.token_to_id('<pad>'))
+        self.src_embed = nn.Embedding(
+            25000, embed_size, padding_idx=src_tkr.piece_to_id('<pad>'))
+        self.tgt_embed = nn.Embedding(
+            25000, embed_size, padding_idx=tgt_tkr.piece_to_id('<pad>'))
         # sos = tgt_tkr.token_to_id("<s>")
         # eos = tgt_tkr.token_to_id("</s>")
         # pad = tgt_tkr.token_to_id("<pad>")
         # print(sos, eos, pad)
         # raise Exception('ok')
 
-        self.encoder_lstm = nn.LSTM(embed_size, hidden_size, bidirectional=True)
+        self.encoder_lstm = nn.LSTM(
+            embed_size, hidden_size, bidirectional=True)
         decoder_lstm_input = embed_size + hidden_size if self.input_feed else embed_size
         self.decoder_lstm = nn.LSTMCell(decoder_lstm_input, hidden_size)
 
         # attention: dot product attention
         # project source encoding to decoder rnn's state space
-        self.att_src_linear = nn.Linear(hidden_size * 2, hidden_size, bias=False)
+        self.att_src_linear = nn.Linear(
+            hidden_size * 2, hidden_size, bias=False)
 
         # transformation of decoder hidden states and context vectors before reading out target words
         # this produces the `attentional vector` in (Luong et al., 2015)
-        self.att_vec_linear = nn.Linear(hidden_size * 2 + hidden_size, hidden_size, bias=False)
+        self.att_vec_linear = nn.Linear(
+            hidden_size * 2 + hidden_size, hidden_size, bias=False)
 
         # prediction layer of the target vocabulary
         self.readout = nn.Linear(hidden_size, 25000, bias=False)
@@ -138,18 +145,22 @@ class NMT(nn.Module):
         """
 
         # (src_sent_len, batch_size)
-        src_sents_var, src_sents_len = self.to_input_tensor(src_sents, self.src_tkr, device=self.device)
+        src_sents_var, src_sents_len = self.to_input_tensor(
+            src_sents, self.src_tkr, device=self.device)
         # print(src_sents_var)
-        
-        # (tgt_sent_len, batch_size)
-        tgt_sents_var, tgt_sents_len = self.to_input_tensor(tgt_sents, self.tgt_tkr, device=self.device, tgt=True)
 
-        src_encodings, decoder_init_vec = self.encode(src_sents_var, src_sents_len)
+        # (tgt_sent_len, batch_size)
+        tgt_sents_var, tgt_sents_len = self.to_input_tensor(
+            tgt_sents, self.tgt_tkr, device=self.device, tgt=True)
+
+        src_encodings, decoder_init_vec = self.encode(
+            src_sents_var, src_sents_len)
 
         src_sent_masks = self.get_attention_mask(src_encodings, src_sents_len)
 
         # (tgt_sent_len - 1, batch_size, hidden_size)
-        att_vecs = self.decode(src_encodings, src_sent_masks, decoder_init_vec, tgt_sents_var[:-1])
+        att_vecs = self.decode(src_encodings, src_sent_masks,
+                               decoder_init_vec, tgt_sents_var[:-1])
 
         # (tgt_sent_len - 1, batch_size, tgt_vocab_size)
         tgt_words_log_prob = F.log_softmax(self.readout(att_vecs), dim=-1)
@@ -163,7 +174,8 @@ class NMT(nn.Module):
             tgt_words_mask = (tgt_sents_var != 0).float()
 
             # (tgt_sent_len - 1, batch_size)
-            tgt_gold_words_log_prob = torch.gather(tgt_words_log_prob, index=tgt_sents_var[1:].unsqueeze(-1), dim=-1).squeeze(-1) * tgt_words_mask[1:]
+            tgt_gold_words_log_prob = torch.gather(
+                tgt_words_log_prob, index=tgt_sents_var[1:].unsqueeze(-1), dim=-1).squeeze(-1) * tgt_words_mask[1:]
 
         # (batch_size)
         scores = tgt_gold_words_log_prob.sum(dim=0)
@@ -171,7 +183,8 @@ class NMT(nn.Module):
         return scores
 
     def get_attention_mask(self, src_encodings: torch.Tensor, src_sents_len: List[int]) -> torch.Tensor:
-        src_sent_masks = torch.zeros(src_encodings.size(0), src_encodings.size(1), dtype=torch.float)
+        src_sent_masks = torch.zeros(src_encodings.size(
+            0), src_encodings.size(1), dtype=torch.float)
         for e_id, src_len in enumerate(src_sents_len):
             src_sent_masks[e_id, src_len:] = 1
 
@@ -192,17 +205,20 @@ class NMT(nn.Module):
         src_word_embeds = self.src_embed(src_sents_var)
         # print('src emb', src_word_embeds.shape)
 
-        packed_src_embed = pack_padded_sequence(src_word_embeds, src_sent_lens, enforce_sorted=False)
+        packed_src_embed = pack_padded_sequence(
+            src_word_embeds, src_sent_lens, enforce_sorted=False)
 
         # src_encodings: (src_sent_len, batch_size, hidden_size * 2)
-        src_encodings, (last_state, last_cell) = self.encoder_lstm(packed_src_embed)
+        src_encodings, (last_state, last_cell) = self.encoder_lstm(
+            packed_src_embed)
 
         src_encodings, _ = pad_packed_sequence(src_encodings)
 
         # (batch_size, src_sent_len, hidden_size * 2)
         src_encodings = src_encodings.permute(1, 0, 2)
 
-        dec_init_cell = self.decoder_cell_init(torch.cat([last_cell[0], last_cell[1]], dim=1))
+        dec_init_cell = self.decoder_cell_init(
+            torch.cat([last_cell[0], last_cell[1]], dim=1))
         dec_init_state = torch.tanh(dec_init_cell)
 
         return src_encodings, (dec_init_state, dec_init_cell)
@@ -250,7 +266,8 @@ class NMT(nn.Module):
             else:
                 x = y_tm1_embed
 
-            (h_t, cell_t), att_t, alpha_t = self.step(x, h_tm1, src_encodings, src_encoding_att_linear, src_sent_masks)
+            (h_t, cell_t), att_t, alpha_t = self.step(x, h_tm1,
+                                                      src_encodings, src_encoding_att_linear, src_sent_masks)
 
             att_tm1 = att_t
             h_tm1 = h_t, cell_t
@@ -267,17 +284,20 @@ class NMT(nn.Module):
         # h_t: (batch_size, hidden_size)
         h_t, cell_t = self.decoder_lstm(x, h_tm1)
 
-        ctx_t, alpha_t = self.dot_prod_attention(h_t, src_encodings, src_encoding_att_linear, src_sent_masks)
+        ctx_t, alpha_t = self.dot_prod_attention(
+            h_t, src_encodings, src_encoding_att_linear, src_sent_masks)
 
-        att_t = torch.tanh(self.att_vec_linear(torch.cat([h_t, ctx_t], 1)))  # E.q. (5)
+        att_t = torch.tanh(self.att_vec_linear(
+            torch.cat([h_t, ctx_t], 1)))  # E.q. (5)
         att_t = self.dropout(att_t)
 
         return (h_t, cell_t), att_t, alpha_t
 
     def dot_prod_attention(self, h_t: torch.Tensor, src_encoding: torch.Tensor, src_encoding_att_linear: torch.Tensor,
-                           mask: torch.Tensor=None) -> Tuple[torch.Tensor, torch.Tensor]:
+                           mask: torch.Tensor = None) -> Tuple[torch.Tensor, torch.Tensor]:
         # (batch_size, src_sent_len)
-        att_weight = torch.bmm(src_encoding_att_linear, h_t.unsqueeze(2)).squeeze(2)
+        att_weight = torch.bmm(src_encoding_att_linear,
+                               h_t.unsqueeze(2)).squeeze(2)
 
         if mask is not None:
             att_weight.data.masked_fill_(mask.bool(), -float('inf'))
@@ -286,11 +306,12 @@ class NMT(nn.Module):
 
         att_view = (att_weight.size(0), 1, att_weight.size(1))
         # (batch_size, hidden_size)
-        ctx_vec = torch.bmm(softmaxed_att_weight.view(*att_view), src_encoding).squeeze(1)
+        ctx_vec = torch.bmm(softmaxed_att_weight.view(
+            *att_view), src_encoding).squeeze(1)
 
         return ctx_vec, softmaxed_att_weight
 
-    def beam_search(self, src_sent: List[str], beam_size: int=5, max_decoding_time_step: int=70) -> List[Hypothesis]:
+    def beam_search(self, src_sent: List[str], beam_size: int = 5, max_decoding_time_step: int = 70) -> List[Hypothesis]:
         """
         Given a single source sentence, perform beam search
         Args:
@@ -303,7 +324,8 @@ class NMT(nn.Module):
                 score: float: the log-likelihood of the target sentence
         """
 
-        src_sents_var , src_sents_len= self.to_input_tensor([src_sent], self.src_tkr, self.device)
+        src_sents_var, src_sents_len = self.to_input_tensor(
+            [src_sent], self.src_tkr, self.device)
         src_encodings, dec_init_vec = self.encode(src_sents_var, src_sents_len)
         src_encodings_att_linear = self.att_src_linear(src_encodings)
 
@@ -314,7 +336,8 @@ class NMT(nn.Module):
         sos_id = self.tgt_tkr.token_to_id('<s>')
 
         hypotheses = [[sos_id]]
-        hyp_scores = torch.zeros(len(hypotheses), dtype=torch.float, device=self.device)
+        hyp_scores = torch.zeros(
+            len(hypotheses), dtype=torch.float, device=self.device)
         completed_hypotheses = []
 
         t = 0
@@ -327,11 +350,13 @@ class NMT(nn.Module):
                                                      src_encodings.size(2))
 
             exp_src_encodings_att_linear = src_encodings_att_linear.expand(hyp_num,
-                                                                           src_encodings_att_linear.size(1),
+                                                                           src_encodings_att_linear.size(
+                                                                               1),
                                                                            src_encodings_att_linear.size(2))
 
             # y_tm1 = torch.tensor([self.tgt_tkr.token_to_id(hyp[-1]) for hyp in hypotheses], dtype=torch.long, device=self.device)
-            y_tm1 = torch.tensor([hyp[-1] for hyp in hypotheses], dtype=torch.long, device=self.device)
+            y_tm1 = torch.tensor(
+                [hyp[-1] for hyp in hypotheses], dtype=torch.long, device=self.device)
 
             y_tm1_embed = self.tgt_embed(y_tm1)
 
@@ -347,8 +372,10 @@ class NMT(nn.Module):
             log_p_t = F.log_softmax(self.readout(att_t), dim=-1)
 
             live_hyp_num = beam_size - len(completed_hypotheses)
-            contiuating_hyp_scores = (hyp_scores.unsqueeze(1).expand_as(log_p_t) + log_p_t).view(-1)
-            top_cand_hyp_scores, top_cand_hyp_pos = torch.topk(contiuating_hyp_scores, k=live_hyp_num)
+            contiuating_hyp_scores = (hyp_scores.unsqueeze(
+                1).expand_as(log_p_t) + log_p_t).view(-1)
+            top_cand_hyp_scores, top_cand_hyp_pos = torch.topk(
+                contiuating_hyp_scores, k=live_hyp_num)
 
             prev_hyp_ids = top_cand_hyp_pos // 25000
             hyp_word_ids = top_cand_hyp_pos % 25000
@@ -375,13 +402,15 @@ class NMT(nn.Module):
             if len(completed_hypotheses) == beam_size:
                 break
 
-            live_hyp_ids = torch.tensor(live_hyp_ids, dtype=torch.long, device=self.device)
+            live_hyp_ids = torch.tensor(
+                live_hyp_ids, dtype=torch.long, device=self.device)
             h_tm1 = (h_t[live_hyp_ids], cell_t[live_hyp_ids])
             att_tm1 = att_t[live_hyp_ids]
 
             hypotheses = new_hypotheses
             # raise Exception('ok')
-            hyp_scores = torch.tensor(new_hyp_scores, dtype=torch.float, device=self.device)
+            hyp_scores = torch.tensor(
+                new_hyp_scores, dtype=torch.float, device=self.device)
 
         if len(completed_hypotheses) == 0:
             completed_hypotheses.append(Hypothesis(value=hypotheses[0][1:],
@@ -405,7 +434,8 @@ class NMT(nn.Module):
                 score: float: the log-likelihood of the target sentence
         """
 
-        src_sents_var, src_sents_len = self.to_input_tensor(src_sents, self.src_tkr, self.device)
+        src_sents_var, src_sents_len = self.to_input_tensor(
+            src_sents, self.src_tkr, self.device)
 
         src_encodings, dec_init_vec = self.encode(src_sents_var, src_sents_len)
         src_encodings_att_linear = self.att_src_linear(src_encodings)
@@ -417,19 +447,24 @@ class NMT(nn.Module):
 
         # (total_sample_size, max_src_len, src_encoding_size)
         src_encodings = src_encodings.repeat(sample_size, 1, 1)
-        src_encodings_att_linear = src_encodings_att_linear.repeat(sample_size, 1, 1)
+        src_encodings_att_linear = src_encodings_att_linear.repeat(
+            sample_size, 1, 1)
 
         src_sent_masks = self.get_attention_mask(src_encodings, src_sents_len)
 
-        h_tm1 = (h_tm1[0].repeat(sample_size, 1), h_tm1[1].repeat(sample_size, 1))
+        h_tm1 = (h_tm1[0].repeat(sample_size, 1),
+                 h_tm1[1].repeat(sample_size, 1))
 
-        att_tm1 = torch.zeros(total_sample_size, self.hidden_size, device=self.device)
+        att_tm1 = torch.zeros(
+            total_sample_size, self.hidden_size, device=self.device)
 
         eos_id = self.tgt_tkr.token_to_id('</s>').ids[0]
-        sample_ends = torch.zeros(total_sample_size, dtype=torch.uint8, device=self.device)
+        sample_ends = torch.zeros(
+            total_sample_size, dtype=torch.uint8, device=self.device)
         sample_scores = torch.zeros(total_sample_size, device=self.device)
 
-        samples = [torch.tensor([self.tgt_tkr.token_to_id('<s>')] * total_sample_size, dtype=torch.long, device=self.device)]
+        samples = [torch.tensor([self.tgt_tkr.token_to_id(
+            '<s>')] * total_sample_size, dtype=torch.long, device=self.device)]
 
         t = 0
         while t < max_decoding_time_step:
@@ -460,7 +495,8 @@ class NMT(nn.Module):
             samples.append(y_t)
 
             sample_ends |= torch.eq(y_t, eos_id).byte()
-            sample_scores = sample_scores + log_p_y_t * (1. - sample_ends.float())
+            sample_scores = sample_scores + \
+                log_p_y_t * (1. - sample_ends.float())
 
             if torch.all(sample_ends):
                 break
@@ -468,7 +504,8 @@ class NMT(nn.Module):
             att_tm1 = att_t
             h_tm1 = (h_t, cell_t)
 
-        _completed_samples = [[[] for _1 in range(sample_size)] for _2 in range(batch_size)]
+        _completed_samples = [
+            [[] for _1 in range(sample_size)] for _2 in range(batch_size)]
         for t, y_t in enumerate(samples):
             for i, sampled_word_id in enumerate(y_t):
                 sampled_word_id = sampled_word_id.cpu().item()
@@ -476,9 +513,11 @@ class NMT(nn.Module):
                 sample_id = i // batch_size
 
                 if t == 0 or _completed_samples[src_sent_id][sample_id][-1] != eos_id:
-                    _completed_samples[src_sent_id][sample_id].append(sampled_word_id)
+                    _completed_samples[src_sent_id][sample_id].append(
+                        sampled_word_id)
 
-        completed_samples = [[None for _1 in range(sample_size)] for _2 in range(batch_size)]
+        completed_samples = [[None for _1 in range(
+            sample_size)] for _2 in range(batch_size)]
         for src_sent_id in range(batch_size):
             for sample_id in range(sample_size):
                 offset = sample_id * batch_size + src_sent_id
@@ -490,9 +529,11 @@ class NMT(nn.Module):
 
     @staticmethod
     def load(model_path: str):
-        params = torch.load(model_path, map_location=lambda storage, loc: storage)
+        params = torch.load(
+            model_path, map_location=lambda storage, loc: storage)
         args = params['args']
-        model = NMT(src_tkr = params['src_tkr'], tgt_tkr=params['tgt_tkr'],**args)
+        model = NMT(src_tkr=params['src_tkr'],
+                    tgt_tkr=params['tgt_tkr'], **args)
         model.load_state_dict(params['state_dict'])
 
         return model
@@ -504,7 +545,7 @@ class NMT(nn.Module):
             'args': dict(embed_size=self.embed_size, hidden_size=self.hidden_size, dropout_rate=self.dropout_rate,
                          input_feed=self.input_feed, label_smoothing=self.label_smoothing),
             'src_tkr': self.src_tkr,
-            'tgt_tkr':self.tgt_tkr,
+            'tgt_tkr': self.tgt_tkr,
             'state_dict': self.state_dict()
         }
 
@@ -536,7 +577,8 @@ def evaluate_ppl(model, dev_data, tkr, batch_size=32):
             loss = -model(src_sents, tgt_sents).sum()
 
             cum_loss += loss.item()
-            tgt_word_num_to_predict = sum( [len(tkr.encode(s).ids)-1 for s in tgt_sents])
+            tgt_word_num_to_predict = sum(
+                [len(tkr.encode(s).ids)-1 for s in tgt_sents])
             # tgt_word_num_to_predict = sum(len(s[1:]) for s in tgt_sents)  # omitting leading `<s>`
             cum_tgt_words += tgt_word_num_to_predict
 
@@ -568,7 +610,7 @@ def compute_corpus_level_bleu_score(references: List[List[str]], hypotheses: Lis
     #     references[i] = [x.split() for x in references[i]]
     # for i in range(len(hypotheses)):
     #     hypotheses[i] = [x.split() for x in hypotheses[i]]
-    
+
     print(references[0])
     print(hypotheses[0])
     print(len(references))
@@ -582,44 +624,59 @@ def compute_corpus_level_bleu_score(references: List[List[str]], hypotheses: Lis
     # bleu_score = corpus_bleu([[ref] for ref in references],
     #                          [[hyp] for hyp in hypotheses])
     # print(bleu_score)
-    raise Exception('ok') # list of list of token(sent bleu), list of list of list of token(corpus bleu)
+    # list of list of token(sent bleu), list of list of list of token(corpus bleu)
+    raise Exception('ok')
     bleu_score = corpus_bleu([[ref] for ref in references],
                              [[hyp] for hyp in hypotheses])
 
     return bleu_score
 
+
 def get_tkrs(args):
-    
+
+    # TODO: replace the path with args[]
+    model_file = 'data/tokenizer/spm/en/bpe.model'
+    sp_src = spm.SentencePieceProcessor(model_file=model_file)
+    model_file = 'data/tokenizer/spm/fr/bpe.model'
+    sp_tgt = spm.SentencePieceProcessor(model_file=model_file)
+
+    return sp_src, sp_tgt
+
+    # mark as deprecated?
+    """
     src_tkr = Tokenizer(BPE())
     src_tkr.normalizer = Sequence([
         NFKC(),
         Lowercase()
-        ])
+    ])
     src_tkr.pre_tokenizer = ByteLevel()
     src_tkr.decoder = ByteLevelDecoder()
-    src_tkr.model = BPE(args["src_tkr"]+'/vocab.json', args["src_tkr"]+'/merges.txt')
+    src_tkr.model = BPE(args["src_tkr"]+'/vocab.json',
+                        args["src_tkr"]+'/merges.txt')
 
     tgt_tkr = Tokenizer(BPE())
     tgt_tkr.normalizer = Sequence([
         NFKC(),
         Lowercase()
-        ])
+    ])
     tgt_tkr.pre_tokenizer = ByteLevel()
     tgt_tkr.decoder = ByteLevelDecoder()
-    tgt_tkr.model = BPE(args["tgt_tkr"]+'/vocab.json', args["tgt_tkr"]+'/merges.txt')
+    tgt_tkr.model = BPE(args["tgt_tkr"]+'/vocab.json',
+                        args["tgt_tkr"]+'/merges.txt')
     return src_tkr, tgt_tkr
+    """
 
 
 def check_empty(src, tgt):
     new_src = []
     new_tgt = []
-    delete_num=0
+    delete_num = 0
     for i in range(len(src)):
         if len(src[i]) == 0:
-            delete_num+=1
+            delete_num += 1
             continue
         elif len(tgt[i]) == 2:
-            delete_num+=1
+            delete_num += 1
             continue
         else:
             new_src.append(src[i])
@@ -627,11 +684,13 @@ def check_empty(src, tgt):
     print('delete num', delete_num)
     return new_src, new_tgt
 
+
 def train(args: Dict):
     train_data_src = read_corpus(args['train_src'], source='src')
     train_data_tgt = read_corpus(args['train_tgt'], source='tgt')
 
-    train_data_src, train_data_tgt = check_empty(train_data_src, train_data_tgt)
+    train_data_src, train_data_tgt = check_empty(
+        train_data_src, train_data_tgt)
 
     dev_data_src = read_corpus(args['dev_src'], source='src')
     dev_data_tgt = read_corpus(args['dev_tgt'], source='tgt')
@@ -660,7 +719,8 @@ def train(args: Dict):
 
     uniform_init = float(args['uniform_init'])
     if np.abs(uniform_init) > 0.:
-        print('uniformly initialize parameters [-%f, +%f]' % (uniform_init, uniform_init), file=sys.stderr)
+        print('uniformly initialize parameters [-%f, +%f]' %
+              (uniform_init, uniform_init), file=sys.stderr)
         for p in model.parameters():
             p.data.uniform_(-uniform_init, uniform_init)
 
@@ -684,7 +744,7 @@ def train(args: Dict):
     while True:
         epoch += 1
         torch.cuda.empty_cache()
-        
+
         for src_sents, tgt_sents in batch_iter(train_data, batch_size=train_batch_size, shuffle=True):
             train_iter += 1
 
@@ -705,7 +765,8 @@ def train(args: Dict):
             loss.backward()
 
             # clip gradient
-            grad_norm = torch.nn.utils.clip_grad_norm(model.parameters(), clip_grad)
+            grad_norm = torch.nn.utils.clip_grad_norm(
+                model.parameters(), clip_grad)
 
             optimizer.step()
 
@@ -713,7 +774,8 @@ def train(args: Dict):
             report_loss += batch_losses_val
             cum_loss += batch_losses_val
 
-            tgt_words_num_to_predict = sum([len(tgt_tkr.encode(s).ids)-1 for s in tgt_sents])
+            tgt_words_num_to_predict = sum(
+                [len(tgt_tkr.encode(s).ids)-1 for s in tgt_sents])
 
             # tgt_words_num_to_predict = sum(len(s[1:]) for s in tgt_sents)  # omitting leading `<s>`
             report_tgt_words += tgt_words_num_to_predict
@@ -722,12 +784,15 @@ def train(args: Dict):
             cum_examples += batch_size
 
             if train_iter % log_every == 0:
-                print('epoch %d, iter %d, avg. loss %.2f, avg. ppl %.2f ' \
+                print('epoch %d, iter %d, avg. loss %.2f, avg. ppl %.2f '
                       'cum. examples %d, speed %.2f words/sec, time elapsed %.2f sec' % (epoch, train_iter,
                                                                                          report_loss / report_examples,
-                                                                                         math.exp(report_loss / report_tgt_words),
+                                                                                         math.exp(
+                                                                                             report_loss / report_tgt_words),
                                                                                          cum_examples,
-                                                                                         report_tgt_words / (time.time() - train_time),
+                                                                                         report_tgt_words /
+                                                                                         (time.time(
+                                                                                         ) - train_time),
                                                                                          time.time() - begin_time), file=sys.stderr)
 
                 train_time = time.time()
@@ -736,9 +801,10 @@ def train(args: Dict):
             # perform validation
             if train_iter % valid_niter == 0:
                 print('epoch %d, iter %d, cum. loss %.2f, cum. ppl %.2f cum. examples %d' % (epoch, train_iter,
-                                                                                         cum_loss / cum_examples,
-                                                                                         np.exp(cum_loss / cum_tgt_words),
-                                                                                         cum_examples), file=sys.stderr)
+                                                                                             cum_loss / cum_examples,
+                                                                                             np.exp(
+                                                                                                 cum_loss / cum_tgt_words),
+                                                                                             cum_examples), file=sys.stderr)
 
                 cum_loss = cum_examples = cum_tgt_words = 0.
                 valid_num += 1
@@ -746,21 +812,26 @@ def train(args: Dict):
                 print('begin validation ...', file=sys.stderr)
 
                 # compute dev. ppl and bleu
-                dev_ppl = evaluate_ppl(model, dev_data, tgt_tkr, batch_size=32)   # dev batch size can be a bit larger
+                # dev batch size can be a bit larger
+                dev_ppl = evaluate_ppl(model, dev_data, tgt_tkr, batch_size=32)
                 valid_metric = -dev_ppl
 
-                print('validation: iter %d, dev. ppl %f' % (train_iter, dev_ppl), file=sys.stderr)
+                print('validation: iter %d, dev. ppl %f' %
+                      (train_iter, dev_ppl), file=sys.stderr)
 
-                is_better = len(hist_valid_scores) == 0 or valid_metric > max(hist_valid_scores)
+                is_better = len(hist_valid_scores) == 0 or valid_metric > max(
+                    hist_valid_scores)
                 hist_valid_scores.append(valid_metric)
 
                 if is_better:
                     patience = 0
-                    print('save currently the best model to [%s]' % model_save_path, file=sys.stderr)
+                    print(
+                        'save currently the best model to [%s]' % model_save_path, file=sys.stderr)
                     model.save(model_save_path)
 
                     # also save the optimizers' state
-                    torch.save(optimizer.state_dict(), model_save_path + '.optim')
+                    torch.save(optimizer.state_dict(),
+                               model_save_path + '.optim')
                 elif patience < int(args['patience']):
                     patience += 1
                     print('hit patience %d' % patience, file=sys.stderr)
@@ -772,22 +843,27 @@ def train(args: Dict):
                             print('early stop!', file=sys.stderr)
                             x = [i for i in range(len(hist_valid_scores))]
                             y = [-h for h in hist_valid_scores]
-                            plt.plot(x,y)
+                            plt.plot(x, y)
                             src = args['src']
-                            plt.savefig(f'nmt-src-{src}.png')   
+                            plt.savefig(f'nmt-src-{src}.png')
                             exit(0)
 
                         # decay lr, and restore from previously best checkpoint
-                        lr = optimizer.param_groups[0]['lr'] * float(args['lr_decay'])
-                        print('load previously best model and decay learning rate to %f' % lr, file=sys.stderr)
+                        lr = optimizer.param_groups[0]['lr'] * \
+                            float(args['lr_decay'])
+                        print(
+                            'load previously best model and decay learning rate to %f' % lr, file=sys.stderr)
 
                         # load model
-                        params = torch.load(model_save_path, map_location=lambda storage, loc: storage)
+                        params = torch.load(
+                            model_save_path, map_location=lambda storage, loc: storage)
                         model.load_state_dict(params['state_dict'])
                         model = model.to(device)
 
-                        print('restore parameters of the optimizers', file=sys.stderr)
-                        optimizer.load_state_dict(torch.load(model_save_path + '.optim'))
+                        print('restore parameters of the optimizers',
+                              file=sys.stderr)
+                        optimizer.load_state_dict(
+                            torch.load(model_save_path + '.optim'))
 
                         # set new lr
                         for param_group in optimizer.param_groups:
@@ -800,11 +876,11 @@ def train(args: Dict):
                     print('reached maximum number of epochs!', file=sys.stderr)
                     x = [i for i in range(len(hist_valid_scores))]
                     y = [-h for h in hist_valid_scores]
-                    plt.plot(x,y)
+                    plt.plot(x, y)
                     src = args['src']
-                    plt.savefig(f'nmt-src-{src}.png')   
+                    plt.savefig(f'nmt-src-{src}.png')
                     exit(0)
- 
+
 
 def beam_search(model: NMT, test_data_src: List[List[str]], beam_size: int, max_decoding_time_step: int) -> List[List[Hypothesis]]:
     was_training = model.training
@@ -813,11 +889,13 @@ def beam_search(model: NMT, test_data_src: List[List[str]], beam_size: int, max_
     hypotheses = []
     with torch.no_grad():
         for src_sent in tqdm(test_data_src, desc='Decoding', file=sys.stdout):
-            example_hyps = model.beam_search(src_sent, beam_size=beam_size, max_decoding_time_step=max_decoding_time_step)
+            example_hyps = model.beam_search(
+                src_sent, beam_size=beam_size, max_decoding_time_step=max_decoding_time_step)
 
             hypotheses.append(example_hyps)
 
-    if was_training: model.train(was_training)
+    if was_training:
+        model.train(was_training)
 
     return hypotheses
 
@@ -829,10 +907,12 @@ def decode(args: Dict[str, str]):
     corpus-level BLEU score.
     """
 
-    print(f"load test source sentences from [{args['test_src']}]", file=sys.stderr)
+    print(
+        f"load test source sentences from [{args['test_src']}]", file=sys.stderr)
     test_data_src = read_corpus(args['test_src'], source='src')
     if args['test_tgt']:
-        print(f"load test target sentences from [{args['test_tgt']}]", file=sys.stderr)
+        print(
+            f"load test target sentences from [{args['test_tgt']}]", file=sys.stderr)
         test_data_tgt = read_corpus(args['test_tgt'], source='tgt')
 
     print(f"load model from {args['save_to']}", file=sys.stderr)
@@ -853,11 +933,13 @@ def decode(args: Dict[str, str]):
 
     if args['test_tgt']:
         top_hypotheses = [hyps[0] for hyps in hypotheses]
-        top_hypotheses = [tgt_tkr.decode(t.value).split() for t in top_hypotheses]
+        top_hypotheses = [tgt_tkr.decode(t.value).split()
+                          for t in top_hypotheses]
         test_data_tgt = [t.split() for t in test_data_tgt]
         print(top_hypotheses[0])
         print(test_data_tgt[0])
-        bleu_score = compute_corpus_level_bleu_score(test_data_tgt, top_hypotheses)
+        bleu_score = compute_corpus_level_bleu_score(
+            test_data_tgt, top_hypotheses)
         print(f'Corpus BLEU: {bleu_score}', file=sys.stderr)
 
     with open(args['test_pred_file'], 'w') as f:
