@@ -63,7 +63,7 @@ class ALComponent(nn.Module):
         # birdge function
         self.bx = bx
         self.by = by
-        # h function
+        # decoder h function
         self.dx = dx
         self.dy = dy
         self.dropout = nn.Dropout(CONFIG["dropout"])
@@ -96,7 +96,7 @@ class ALComponent(nn.Module):
 
     def loss(self):
 
-        if self.reverse:
+        if not self.reverse:
             loss_b = self.criterion(self.bx(self._s), self._t)
             loss_d = self.criterion(self._t_prime, self.y)
         else:
@@ -104,103 +104,6 @@ class ALComponent(nn.Module):
             loss_d = self.criterion(self._s_prime, self.x)
 
         return loss_b + loss_d
-
-    def get_attention_mask(self, src_encodings: Tensor, src_sents_len: List[int]) -> Tensor:
-
-        src_sent_masks = torch.zeros(
-            src_encodings.size(0), src_encodings.size(1), dtype=torch.float)
-        for e_id, src_len in enumerate(src_sents_len):
-            src_sent_masks[e_id, src_len:] = 1
-
-        return src_sent_masks.to(src_encodings.device)
-
-    def decode(self, src_encodings, src_sent_masks, decoder_init_vec, tgt_sents_var, tgt_emb):
-
-        # (batch_size, src_sent_len, hidden_size)
-        if not self.reverse:
-            src_encoding_att_linear = self.att_src_g_linear(src_encodings)
-        else:
-            src_encoding_att_linear = self.att_src_f_linear(src_encodings)
-
-        batch_size = src_encodings.size(0)
-
-        # initialize the attentional vector
-        att_tm1 = torch.zeros(batch_size, self.hid_dim,
-                              device=src_encodings.device)
-
-        # (tgt_sent_len, batch_size, embed_size)
-        # here we omit the last word, which is always </s>.
-        # Note that the embedding of </s> is not used in decoding
-
-        tgt_word_embeds = tgt_emb(tgt_sents_var)  # tgt_emb is a layer
-
-        h_tm1 = decoder_init_vec
-
-        att_ves = []
-
-        # start from y_0=`<s>`, iterate until y_{T-1}
-        for y_tm1_embed in tgt_word_embeds.split(split_size=1):
-            y_tm1_embed = y_tm1_embed.squeeze(0)
-            if self.input_feed:
-                # input feeding: concate y_tm1 and previous attentional vector
-                # (batch_size, hidden_size + embed_size)
-
-                x = torch.cat([y_tm1_embed, att_tm1], dim=-1)
-            else:
-                x = y_tm1_embed
-
-            (h_t, cell_t), att_t, alpha_t = self.step(x, h_tm1, src_encodings,
-                                                      src_encoding_att_linear, src_sent_masks, self.reverse)
-
-            att_tm1 = att_t
-            h_tm1 = h_t, cell_t
-            att_ves.append(att_t)
-
-        # (tgt_sent_len - 1, batch_size, tgt_vocab_size)
-        att_ves = torch.stack(att_ves)
-
-        return att_ves
-
-    def step(self, x, h_tm1, src_encodings, src_encoding_att_linear, src_sent_masks):
-
-        # h_t: (batch_size, hidden_size)
-        if not self.reverse:
-            h_t, cell_t = self.decoder_g(x, h_tm1)
-        else:
-            h_t, cell_t = self.decoder_f(x, h_tm1)
-
-        ctx_t, alpha_t = self.dot_prod_attention(
-            h_t, src_encodings, src_encoding_att_linear, src_sent_masks)
-
-        if not self.reverse:
-            att_t = torch.tanh(
-                self.att_vec_g_linear(torch.cat([h_t, ctx_t], 1)))
-        else:
-            att_t = torch.tanh(
-                self.att_vec_f_linear(torch.cat([h_t, ctx_t], 1)))
-
-        att_t = self.dropout(att_t)
-
-        return (h_t, cell_t), att_t, alpha_t
-
-    def dot_prod_attention(self, h_t, src_encoding, src_encoding_att_linear, mask):
-
-        # (batch_size, src_sent_len)
-        att_weight = torch.bmm(src_encoding_att_linear,
-                               h_t.unsqueeze(2)).squeeze(2)
-
-        if mask is not None:
-            att_weight.data.masked_fill_(mask.bool(), -float("inf"))
-
-        m = nn.Softmax(dim=-1)
-        softmaxed_att_weight = m(att_weight)
-
-        att_view = (att_weight.size(0), 1, att_weight.size(1))
-        # (batch_size, hidden_size)
-        ctx_vec = torch.bmm(
-            softmaxed_att_weight.view(*att_view), src_encoding).squeeze(1)
-
-        return ctx_vec, softmaxed_att_weight
 
 
 class LinearAL(ALComponent):
@@ -269,8 +172,8 @@ class LSTMAL(ALComponent):
         bx = nn.Linear(hidden_size[0], hidden_size[1])
         by = nn.Linear(hidden_size[1], hidden_size[0])
         # h function
-        dx = nn.Linear(hidden_size[0], input_size)
-        dy = nn.Linear(hidden_size[1], output_size)
+        dx = nn.BahdanauAttnDecoderRNN(hidden_size[0], input_size)
+        dy = nn.BahdanauAttnDecoderRNN(hidden_size[1], output_size)
 
         super(LSTMAL, self).__init__(
             mode, f, g, bx, by, dx, dy, reverse=reverse)
@@ -316,28 +219,30 @@ class LSTMAL(ALComponent):
 
             if not self.reverse:
                 self._s, (self._h_nx, c_nx) = self.f(x, hx)
-                self._t_prime = self.dy(self.bx(self._s))
+                self._t_prime, h_t, w = self.dy(self.bx(self._s))
                 return self._s.detach(), (self._h_nx, c_nx), self._t_prime.detach()
             else:
                 self._t, (self._h_ny, c_ny) = self.g(y, hy)
-                self._s_prime = self.dx(self.by(self._t))
+                self._s_prime, h_t, w = self.dx(self.by(self._t))
                 return self._t.detach(), (self._h_ny, c_ny), self._s_prime.detach()
 
     def loss(self):
 
+        nllloss = nn.NLLLoss()
         if not self.reverse:
             input = self.bx(self._h_nx).view(-1, self._h_nx.size()[2])
             target = self._h_ny.view(-1, self._h_ny.size()[2])
             loss_b = self.criterion(input, target)
-            # loss_d = self.criterion(self._t_prime, self.y)
-            return loss_b
+            loss_d = nllloss(self._t_prime, self.y)
+
+            return loss_b + loss_d
         else:
             input = self.by(self._h_ny).view(-1, self._h_ny.size()[2])
             target = self._h_nx.view(-1, self._h_nx.size()[2])
             loss_b = self.criterion(input, target)
-            # loss_d = self.criterion(self._s_prime, self.x)
+            loss_d = nllloss(self._s_prime, self.x)
 
-            return loss_b
+            return loss_b + loss_d
 
 
 class GRUAL(ALComponent):
@@ -419,18 +324,20 @@ class GRUAL(ALComponent):
 
     def loss(self):
 
-        # TODO: not readable
+        nllloss = nn.NLLLoss()
         if not self.reverse:
-            loss_b = self.criterion(self.bx(
-                self._h_nx), self._h_ny).view(-1, self._h_ny.size()[1], self._h_ny.size()[2])
-            loss_d = self.criterion(
-                self._t_prime, self.y).view(-1, self.y.size()[1], self.y.size()[2])
+            input = self.bx(self._h_nx).view(-1, self._h_nx.size()[2])
+            target = self._h_ny.view(-1, self._h_ny.size()[2])
+            loss_b = self.criterion(input, target)
+            loss_d = nllloss(self._t_prime, self.y)
+
             return loss_b + loss_d
         else:
-            loss_b = self.criterion(self.self._h_nx, self.by(
-                self._h_ny)).view(-1, self._h_nx.size()[1], self._h_nx.size()[2])
-            loss_d = self.criterion(
-                self._s_prime, self.x).view(-1, self.x.size()[1], self.x.size()[2])
+            input = self.by(self._h_ny).view(-1, self._h_ny.size()[2])
+            target = self._h_nx.view(-1, self._h_nx.size()[2])
+            loss_b = self.criterion(input, target)
+            loss_d = nllloss(self._s_prime, self.x)
+
             return loss_b + loss_d
 
 
@@ -591,6 +498,166 @@ class EmbeddingAL(ALComponent):
         prob = prob.sum() / pred.size(1)
 
         return prob
+
+
+class Attn(nn.Module):
+    """https://github.com/spro/practical-pytorch/blob/master/seq2seq-translation/seq2seq-translation-batched.ipynb"""
+
+    def __init__(self, method, hidden_size):
+        super(Attn, self).__init__()
+
+        self.method = method
+        self.hidden_size = hidden_size
+
+        if self.method == 'general':
+            self.attn = nn.Linear(self.hidden_size, hidden_size)
+
+        elif self.method == 'concat':
+            self.attn = nn.Linear(self.hidden_size * 2, hidden_size)
+            self.v = nn.Parameter(torch.FloatTensor(1, hidden_size))
+
+    def forward(self, hidden, encoder_outputs):
+        max_len = encoder_outputs.size(0)
+        this_batch_size = encoder_outputs.size(1)
+
+        # Create variable to store attention energies
+        attn_energies = Variable(torch.zeros(
+            this_batch_size, max_len))  # B x S
+
+        if USE_CUDA:
+            attn_energies = attn_energies.cuda()
+
+        # For each batch of encoder outputs
+        for b in range(this_batch_size):
+            # Calculate energy for each encoder output
+            for i in range(max_len):
+                attn_energies[b, i] = self.score(
+                    hidden[:, b], encoder_outputs[i, b].unsqueeze(0))
+
+        # Normalize energies to weights in range 0 to 1, resize to 1 x B x S
+        return F.softmax(attn_energies).unsqueeze(1)
+
+    def score(self, hidden, encoder_output):
+
+        if self.method == 'dot':
+            energy = hidden.dot(encoder_output)
+            return energy
+
+        elif self.method == 'general':
+            energy = self.attn(encoder_output)
+            energy = hidden.dot(energy)
+            return energy
+
+        elif self.method == 'concat':
+            energy = self.attn(torch.cat((hidden, encoder_output), 1))
+            energy = self.v.dot(energy)
+            return energy
+
+
+class BahdanauAttnDecoderRNN(nn.Module):
+    """https://github.com/spro/practical-pytorch/blob/master/seq2seq-translation/seq2seq-translation-batched.ipynb"""
+
+    def __init__(self, hidden_size, output_size, n_layers=1, dropout_p=0.1):
+        super(BahdanauAttnDecoderRNN, self).__init__()
+
+        # Define parameters
+        self.hidden_size = hidden_size
+        self.output_size = output_size
+        self.n_layers = n_layers
+        self.dropout_p = dropout_p
+        self.max_length = max_length
+
+        # Define layers
+        self.embedding = nn.Embedding(output_size, hidden_size)
+        self.dropout = nn.Dropout(dropout_p)
+        self.attn = Attn('concat', hidden_size)
+        self.gru = nn.GRU(hidden_size, hidden_size,
+                          n_layers, dropout=dropout_p)
+        self.out = nn.Linear(hidden_size, output_size)
+
+    def forward(self, word_input, last_hidden, encoder_outputs):
+        # Note: we run this one step at a time
+        # TODO: FIX BATCHING
+
+        # Get the embedding of the current input word (last output word)
+        word_embedded = self.embedding(
+            word_input).view(1, 1, -1)  # S=1 x B x N
+        word_embedded = self.dropout(word_embedded)
+
+        # Calculate attention weights and apply to encoder outputs
+        attn_weights = self.attn(last_hidden[-1], encoder_outputs)
+        context = attn_weights.bmm(
+            encoder_outputs.transpose(0, 1))  # B x 1 x N
+        context = context.transpose(0, 1)  # 1 x B x N
+
+        # Combine embedded input word and attended context, run through RNN
+        rnn_input = torch.cat((word_embedded, context), 2)
+        output, hidden = self.gru(rnn_input, last_hidden)
+
+        # Final output layer
+        output = output.squeeze(0)  # B x N
+        m = nn.LogSoftmax()
+        output = m(self.out(torch.cat((output, context), 1)))
+
+        # Return final output, hidden state, and attention weights (for visualization)
+        return output, hidden, attn_weights
+
+
+class LuongAttnDecoderRNN(nn.Module):
+    """https://github.com/spro/practical-pytorch/blob/master/seq2seq-translation/seq2seq-translation-batched.ipynb"""
+
+    def __init__(self, attn_model, hidden_size, output_size, n_layers=1, dropout=0.1):
+        super(LuongAttnDecoderRNN, self).__init__()
+
+        # Keep for reference
+        self.attn_model = attn_model
+        self.hidden_size = hidden_size
+        self.output_size = output_size
+        self.n_layers = n_layers
+        self.dropout = dropout
+
+        # Define layers
+        self.embedding = nn.Embedding(output_size, hidden_size)
+        self.embedding_dropout = nn.Dropout(dropout)
+        self.gru = nn.GRU(hidden_size, hidden_size, n_layers, dropout=dropout)
+        self.concat = nn.Linear(hidden_size * 2, hidden_size)
+        self.out = nn.Linear(hidden_size, output_size)
+
+        # Choose attention model
+        if attn_model != 'none':
+            self.attn = Attn(attn_model, hidden_size)
+
+    def forward(self, input_seq, last_hidden, encoder_outputs):
+        # Note: we run this one step at a time
+
+        # Get the embedding of the current input word (last output word)
+        batch_size = input_seq.size(0)
+        embedded = self.embedding(input_seq)
+        embedded = self.embedding_dropout(embedded)
+        embedded = embedded.view(
+            1, batch_size, self.hidden_size)  # S=1 x B x N
+
+        # Get current hidden state from input word and last hidden state
+        rnn_output, hidden = self.gru(embedded, last_hidden)
+
+        # Calculate attention from current RNN state and all encoder outputs;
+        # apply to encoder outputs to get weighted average
+        attn_weights = self.attn(rnn_output, encoder_outputs)
+        context = attn_weights.bmm(
+            encoder_outputs.transpose(0, 1))  # B x S=1 x N
+
+        # Attentional vector using the RNN hidden state and context vector
+        # concatenated together (Luong eq. 5)
+        rnn_output = rnn_output.squeeze(0)  # S=1 x B x N -> B x N
+        context = context.squeeze(1)       # B x S=1 x N -> B x N
+        concat_input = torch.cat((rnn_output, context), 1)
+        concat_output = F.tanh(self.concat(concat_input))
+
+        # Finally predict next token (Luong eq. 6, without softmax)
+        output = self.out(concat_output)
+
+        # Return final output, hidden state, and attention weights (for visualization)
+        return output, hidden, attn_weights
 
 
 class ALNet(nn.Module):
