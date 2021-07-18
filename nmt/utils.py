@@ -6,6 +6,7 @@ from torch.nn.utils.rnn import pad_sequence
 import torch.nn.functional as F
 import math
 
+
 class NMTData(Dataset):
     def __init__(self, en_data, fr_data, en_tkr, fr_tkr, task="en2fr"):
         with open(en_data) as f:
@@ -22,10 +23,11 @@ class NMTData(Dataset):
         self.fr_data = [fr_tkr.encode(s).ids for s in fr_sents]
 
         assert len(en_sents) == len(fr_sents)
+
     def __len__(self):
         return len(self.fr_data)
 
-    def  __getitem__(self, idx):
+    def __getitem__(self, idx):
         en_sent = self.en_data[idx]
         fr_sent = self.fr_data[idx]
         if self.task == "en2fr":
@@ -34,10 +36,11 @@ class NMTData(Dataset):
         else:
             en_sent = [1] + en_sent + [2]
             return torch.tensor(fr_sent), torch.tensor(en_sent)
-            
+
+
 def collate(batch):
-    src_sents = [e for e,f in batch]
-    tgt_sents = [f for e,f in batch]
+    src_sents = [e for e, f in batch]
+    tgt_sents = [f for e, f in batch]
     src_pad_sents = pad_sequence(src_sents, batch_first=True)
     tgt_pad_sents = pad_sequence(tgt_sents, batch_first=True)
     # tgt_pad_sents = torch.stack(tgt_sents)
@@ -57,17 +60,20 @@ def id2word(sents, tkr):
     else:
         return tkr.decode(sents).ids
 
+
 class LabelSmoothingLoss(nn.Module):
     """
     label smoothing
     Code adapted from OpenNMT-py
     """
+
     def __init__(self, label_smoothing, tgt_vocab_size, padding_idx=0):
         assert 0.0 < label_smoothing <= 1.0
         self.padding_idx = padding_idx
         super(LabelSmoothingLoss, self).__init__()
 
-        smoothing_value = label_smoothing / (tgt_vocab_size - 2)  # -1 for pad, -1 for gold-standard word
+        # -1 for pad, -1 for gold-standard word
+        smoothing_value = label_smoothing / (tgt_vocab_size - 2)
         one_hot = torch.full((tgt_vocab_size,), smoothing_value)
         one_hot[self.padding_idx] = 0
         self.register_buffer('one_hot', one_hot.unsqueeze(0))
@@ -98,7 +104,7 @@ class LabelSmoothingLoss(nn.Module):
         return loss
 
 
-def batch_iter(data, batch_size, shuffle=False):
+def batch_iter(data, src_tkr, tgt_tkr, batch_size, shuffle=False):
     batch_num = math.ceil(len(data) / batch_size)
     index_array = list(range(len(data)))
 
@@ -110,11 +116,13 @@ def batch_iter(data, batch_size, shuffle=False):
         examples = [data[idx] for idx in indices]
         # if i ==0:
         #     print(examples[0])
-        examples = sorted(examples, key=lambda e: len(e[0]), reverse=True)
+        examples = sorted(examples, key=lambda e: len(
+            src_tkr.Encdoe(e[0])), reverse=True)
         src_sents = [e[0] for e in examples]
         tgt_sents = [e[1] for e in examples]
 
         yield src_sents, tgt_sents
+
 
 def read_corpus(file_path, source):
     data = []
@@ -127,13 +135,15 @@ def read_corpus(file_path, source):
 
     return data
 
+
 def input_transpose(sents, pad_token):
     max_len = max(len(s) for s in sents)
     batch_size = len(sents)
 
     sents_t = []
     for i in range(max_len):
-        sents_t.append([sents[k][i] if len(sents[k]) > i else pad_token for k in range(batch_size)])
+        sents_t.append([sents[k][i] if len(sents[k]) >
+                        i else pad_token for k in range(batch_size)])
 
     return sents_t
 
@@ -151,7 +161,7 @@ def to_input_tensor(sents, tkr, device: torch.device, tgt=False) -> torch.Tensor
         # https://github.com/google/sentencepiece/blob/master/python/README.md
         word_ids = [[1]+tkr.encode(s)+[2] for s in sents]
     else:
-        word_ids = [tkr.encode(s) for s in sents] 
+        word_ids = [tkr.encode(s) for s in sents]
 
     sents_len = [len(s) for s in word_ids]
     sents_t = input_transpose(word_ids, 0)
@@ -159,8 +169,6 @@ def to_input_tensor(sents, tkr, device: torch.device, tgt=False) -> torch.Tensor
     sents_var = torch.tensor(sents_t, dtype=torch.long, device=device)
 
     return sents_var, sents_len
-
-
 
 
 # from tokenizers import Tokenizer

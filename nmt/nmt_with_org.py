@@ -745,7 +745,7 @@ def train(args: Dict):
         epoch += 1
         torch.cuda.empty_cache()
 
-        for src_sents, tgt_sents in batch_iter(train_data, batch_size=train_batch_size, shuffle=True):
+        for src_sents, tgt_sents in batch_iter(train_data, src_tkr, tgt_tkr, batch_size=train_batch_size, shuffle=True):
             train_iter += 1
 
             optimizer.zero_grad()
