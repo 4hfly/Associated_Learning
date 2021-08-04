@@ -5,6 +5,8 @@ from collections import OrderedDict
 from typing import List, Optional, Tuple
 
 import torch
+from torch._C import device
+from torch.cuda import is_available
 import torch.nn as nn
 from torch import Tensor
 
@@ -172,8 +174,8 @@ class LSTMAL(ALComponent):
         bx = nn.Linear(hidden_size[0], hidden_size[1])
         by = nn.Linear(hidden_size[1], hidden_size[0])
         # h function
-        dx = nn.BahdanauAttnDecoderRNN(hidden_size[0], input_size)
-        dy = nn.BahdanauAttnDecoderRNN(hidden_size[1], output_size)
+        dx = nn.LuongAttnDecoderRNN(hidden_size[0], input_size)
+        dy = nn.LuongAttnDecoderRNN(hidden_size[1], output_size)
 
         super(LSTMAL, self).__init__(
             mode, f, g, bx, by, dx, dy, reverse=reverse)
@@ -228,19 +230,20 @@ class LSTMAL(ALComponent):
 
     def loss(self):
 
-        nllloss = nn.NLLLoss()
+        # TODO: Consine similarity -> loss
+        cos = nn.CosineSimilarity()
         if not self.reverse:
             input = self.bx(self._h_nx).view(-1, self._h_nx.size()[2])
             target = self._h_ny.view(-1, self._h_ny.size()[2])
             loss_b = self.criterion(input, target)
-            loss_d = nllloss(self._t_prime, self.y)
+            loss_d = cos(self._t_prime, self.y)
 
             return loss_b + loss_d
         else:
             input = self.by(self._h_ny).view(-1, self._h_ny.size()[2])
             target = self._h_nx.view(-1, self._h_nx.size()[2])
             loss_b = self.criterion(input, target)
-            loss_d = nllloss(self._s_prime, self.x)
+            loss_d = cos(self._s_prime, self.x)
 
             return loss_b + loss_d
 
@@ -521,11 +524,10 @@ class Attn(nn.Module):
         this_batch_size = encoder_outputs.size(1)
 
         # Create variable to store attention energies
-        attn_energies = Variable(torch.zeros(
-            this_batch_size, max_len))  # B x S
+        attn_energies = torch.zeros(this_batch_size, max_len)  # B x S
 
-        if USE_CUDA:
-            attn_energies = attn_energies.cuda()
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        attn_energies = attn_energies.to(device)
 
         # For each batch of encoder outputs
         for b in range(this_batch_size):
@@ -535,7 +537,8 @@ class Attn(nn.Module):
                     hidden[:, b], encoder_outputs[i, b].unsqueeze(0))
 
         # Normalize energies to weights in range 0 to 1, resize to 1 x B x S
-        return F.softmax(attn_energies).unsqueeze(1)
+        m = nn.Softmax()
+        return m(attn_energies).unsqueeze(1)
 
     def score(self, hidden, encoder_output):
 
@@ -557,7 +560,7 @@ class Attn(nn.Module):
 class BahdanauAttnDecoderRNN(nn.Module):
     """https://github.com/spro/practical-pytorch/blob/master/seq2seq-translation/seq2seq-translation-batched.ipynb"""
 
-    def __init__(self, hidden_size, output_size, n_layers=1, dropout_p=0.1):
+    def __init__(self, hidden_size, output_size, n_layers=1, dropout_p=0.1, max_length=256):
         super(BahdanauAttnDecoderRNN, self).__init__()
 
         # Define parameters
@@ -649,9 +652,10 @@ class LuongAttnDecoderRNN(nn.Module):
         # Attentional vector using the RNN hidden state and context vector
         # concatenated together (Luong eq. 5)
         rnn_output = rnn_output.squeeze(0)  # S=1 x B x N -> B x N
-        context = context.squeeze(1)       # B x S=1 x N -> B x N
+        context = context.squeeze(1)        # B x S=1 x N -> B x N
         concat_input = torch.cat((rnn_output, context), 1)
-        concat_output = F.tanh(self.concat(concat_input))
+        m = nn.Tanh()
+        concat_output = m(self.concat(concat_input))
 
         # Finally predict next token (Luong eq. 6, without softmax)
         output = self.out(concat_output)
