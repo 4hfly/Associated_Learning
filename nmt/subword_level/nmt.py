@@ -8,8 +8,6 @@ from collections import namedtuple
 import numpy as np
 from typing import List, Tuple, Dict, Set, Union
 from tqdm import tqdm
-# TODO: same as SmoothingFunction.
-from nltk.translate.bleu_score import corpus_bleu, sentence_bleu, SmoothingFunction
 import matplotlib.pyplot as plt
 import sentencepiece as spm
 
@@ -39,6 +37,9 @@ class NMT(nn.Module):
         self.dropout_rate = dropout_rate
         self.vocab = vocab
         self.reverse = reverse
+
+        # NOTE: tmp variable.
+        self.layer = 0
 
         # TODO: LSTMAL. Default layers: 2.
         self.f1 = nn.LSTM(embed_size, hidden_size, bidirectional=True)
@@ -135,6 +136,7 @@ class NMT(nn.Module):
         emb_y = self.emb(target_padded)
 
         # -*- Layer 1 -*-
+        self.layer = 1
         # TODO: AL encoder.
         packed_x = pack_padded_sequence(
             emb_x, source_lengths, enforce_sorted=False)
@@ -210,6 +212,7 @@ class NMT(nn.Module):
         # -*- End of Layer 1 -*-
 
         # -*- Layer 2 -*-
+        self.layer = 2
         # same as layer 1.
         packed_x = pack_padded_sequence(
             emb_x, source_lengths, enforce_sorted=False)
@@ -299,11 +302,11 @@ class NMT(nn.Module):
 
     def step(
         self,
-        Ybar_t: torch.Tensor,
-        dec_state: Tuple[torch.Tensor, torch.Tensor],
-        enc_hiddens: torch.Tensor,
-        enc_hiddens_proj: torch.Tensor,
-        enc_masks: torch.Tensor
+        ybar_t: torch.Tensor,
+        decoder_state: Tuple[torch.Tensor, torch.Tensor],
+        encoder_hiddens: torch.Tensor,
+        encoder_hiddens_proj: torch.Tensor,
+        encoder_masks: torch.Tensor
     ) -> Tuple[Tuple, torch.Tensor, torch.Tensor]:
         """
         Compute one forward step of the LSTM decoder, including the attention computation.
@@ -327,7 +330,47 @@ class NMT(nn.Module):
                                       We are simply returning this value so that we can sanity check
                                       your implementation.
         """
-        pass
+        # TODO: component.
+        if not self.reverse:
+            if self.layer == 1:
+                decoder = self.hg1
+            elif self.layer == 2:
+                decoder = self.hg2
+        else:
+            if self.layer == 1:
+                decoder = self.hf1
+            elif self.layer == 2:
+                decoder = self.hf2
+
+        h_t, c_t = decoder(ybar_t, decoder_state)
+        # dot product attention.
+        e_t = torch.bmm(encoder_hiddens_proj, h_t.unsqueeze(2)).squeeze(2)
+
+        if encoder_masks is not None:
+            e_t.data.masked_fill_(encoder_masks.byte(), -float('inf'))
+
+        # attention weight
+        m = nn.Softmax(dim=1)
+        alpha_t = m(e_t)
+        # context vector
+        a_t = torch.bmm(alpha_t.view(alpha_t.size(0), 1,
+                                     alpha_t.size(1)), encoder_hiddens).squeeze(1)
+        u_t = torch.cat((a_t, h_t), dim=1)
+        # TODO: component.
+        if not self.reverse:
+            if self.layer == 1:
+                v_t = self.combined_output_proj_y1(u_t)
+            elif self.layer == 2:
+                v_t = self.combined_output_proj_y2(u_t)
+        else:
+            if self.layer == 1:
+                v_t = self.combined_output_proj_x1(u_t)
+            elif self.layer == 2:
+                v_t = self.combined_output_proj_x2(u_t)
+
+        combined_output = self.dropout(nn.Tanh(v_t))
+
+        return decoder_state, combined_output, e_t
 
     def generate_sent_masks(self, enc_hiddens: torch.Tensor, source_lengths: List[int]) -> torch.Tensor:
         """
