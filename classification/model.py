@@ -4,6 +4,7 @@ from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
 from torch import Tensor
+from torch.nn.modules.activation import Sigmoid
 from torchtext.vocab import Vectors
 
 CONFIG = {
@@ -119,11 +120,25 @@ class EmbeddingAL(ALComponent):
         g = nn.Embedding(
             num_embeddings[1], embedding_dim[1], padding_idx=padding_idx)
         # bridge function
-        bx = nn.Linear(embedding_dim[0], embedding_dim[1])
-        by = nn.Linear(embedding_dim[1], embedding_dim[0])
+        bx = nn.Sequential(
+            nn.Linear(embedding_dim[0], embedding_dim[1]),
+            nn.Sigmoid()
+        )
+        
+        by = nn.Sequential(
+            nn.Linear(embedding_dim[1], embedding_dim[0]),
+            nn.Sigmoid
+        )
         # h function
-        dx = nn.Linear(embedding_dim[0], num_embeddings[0])
-        dy = nn.Linear(embedding_dim[1], num_embeddings[1])
+        dx = nn.Sequential(
+            nn.Linear(embedding_dim[0], num_embeddings[0]),
+            nn.Sigmoid()
+        )
+        
+        dy = nn.Sequential(
+            nn.Linear(embedding_dim[1], num_embeddings[1]),
+            nn.Sigmoid()
+        )
         # loss function
         cb = nn.MSELoss()
         ca = nn.BCEWithLogitsLoss()
@@ -194,11 +209,20 @@ class LSTMAL(ALComponent):
         )
         g = nn.Linear(output_size, hidden_size[1])
         # bridge function
-        bx = nn.Linear(hidden_size[0], hidden_size[1])
-        by = nn.Linear(hidden_size[1], hidden_size[0])
+        bx = nn.Sequential(
+            nn.Linear(hidden_size[0], hidden_size[1]),
+            nn.Sigmoid()
+            )
+        by = nn.Sequential(
+            nn.Linear(hidden_size[1], hidden_size[0]),
+            nn.Sigmoid()
+            )
         # h function
         dx = nn.LSTM(hidden_size[0], input_size)
-        dy = nn.Linear(hidden_size[1], output_size)
+        dy = nn.Sequential(
+            nn.Linear(hidden_size[1], output_size),
+            nn.Sigmoid()
+            )
         # loss function
         cb = nn.MSELoss()
         ca = nn.MSELoss()
