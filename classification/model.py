@@ -124,7 +124,6 @@ class EmbeddingAL(ALComponent):
             nn.Linear(embedding_dim[0], embedding_dim[1]),
             nn.Sigmoid()
         )
-        
         by = nn.Sequential(
             nn.Linear(embedding_dim[1], embedding_dim[0]),
             nn.Sigmoid
@@ -134,7 +133,6 @@ class EmbeddingAL(ALComponent):
             nn.Linear(embedding_dim[0], num_embeddings[0]),
             nn.Sigmoid()
         )
-        
         dy = nn.Sequential(
             nn.Linear(embedding_dim[1], num_embeddings[1]),
             nn.Sigmoid()
@@ -164,11 +162,23 @@ class LinearAL(ALComponent):
         f = nn.Linear(in_features, hidden_size[0], bias=bias)
         g = nn.Linear(out_features, hidden_size[1], bias=bias)
         # bridge function
-        bx = nn.Linear(hidden_size[0], hidden_size[1])
-        by = nn.Linear(hidden_size[1], hidden_size[0])
+        bx = nn.Sequential(
+            nn.Linear(hidden_size[0], hidden_size[1]),
+            nn.Sigmoid()
+        )
+        by = nn.Sequential(
+            nn.Linear(hidden_size[1], hidden_size[1]),
+            nn.Sigmoid()
+        )
         # h function
-        dx = nn.Linear(hidden_size[0], in_features)
-        dy = nn.Linear(hidden_size[1], out_features)
+        dx = nn.Sequential(
+            nn.Linear(hidden_size[0], in_features),
+            nn.Sigmoid()
+        )
+        dy = nn.Sequential(
+            nn.Linear(hidden_size[1], out_features),
+            nn.Sigmoid()
+        )
         # loss function
         cb = nn.MSELoss()
         ca = nn.MSELoss()
@@ -212,17 +222,17 @@ class LSTMAL(ALComponent):
         bx = nn.Sequential(
             nn.Linear(hidden_size[0], hidden_size[1]),
             nn.Sigmoid()
-            )
+        )
         by = nn.Sequential(
             nn.Linear(hidden_size[1], hidden_size[0]),
             nn.Sigmoid()
-            )
+        )
         # h function
         dx = nn.LSTM(hidden_size[0], input_size)
         dy = nn.Sequential(
             nn.Linear(hidden_size[1], output_size),
             nn.Sigmoid()
-            )
+        )
         # loss function
         cb = nn.MSELoss()
         ca = nn.MSELoss()

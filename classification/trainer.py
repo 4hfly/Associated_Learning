@@ -117,7 +117,7 @@ class Trainer(object):
             self.optimizer_3.step()
 
             # inference
-            left = self.layer_2.f(self.layer_1.f(self.embedding(text)))
+            left = self.layer_2.f(self.layer_1.f(self.embedding.f(text)))
             right = self.layer_2.bx(left)
             predicted_label = self.embedding.dy(
                 self.layer_1.dy(self.layer_2.dy(right)))
