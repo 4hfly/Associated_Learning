@@ -528,3 +528,12 @@ cython_debug/
 # our data
 data/wikitext-103-raw/
 data/wmt14/
+*.tfrecords
+lm/__pycache__/
+lm/data/pretrain
+lm/data/train
+lm/data/test
+lm/data/valid
+lm/data/fr
+lm/model_ckp
+nmt/data/
