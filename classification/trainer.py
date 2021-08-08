@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from torchtext.data.functional import to_map_style_dataset
 from torchtext.data.utils import get_tokenizer
 from torchtext.datasets import IMDB
-from torchtext.vocab import Vocab
+from torchtext.vocab import FastText, Vocab
 
 from model import LSTMAL, EmbeddingAL
 
@@ -70,9 +70,10 @@ class Trainer(object):
 
         # TODO: emb_size for y
         # TODO: magic number (300, 2)
-        self.embedding = EmbeddingAL((dataset.vocab_size, 2), (300))
-        self.layer_1 = LSTMAL()
-        self.layer_2 = LSTMAL()
+        pretrained = FastText()
+        self.embedding = EmbeddingAL((dataset.vocab_size, 2), (300, 128), pretrained)
+        self.layer_1 = LSTMAL(300, 128, (128, 128))
+        self.layer_2 = LSTMAL(128, 128, (64, 64))
         self.model = nn.Sequential(
             self.embedding,
             self.layer_1,
