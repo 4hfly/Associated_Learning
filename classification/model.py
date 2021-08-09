@@ -21,6 +21,28 @@ CONFIG = {
 }
 
 
+class CLS(nn.Module):
+    def __init__(self, vocab_size, emb_dim, hid_dim):
+            
+        super(CLS, self).__init__()
+        self.emb = nn.Emeddings(vocab_size, emb_dim)
+        self.lstm = nn.LSTM(
+                input_size=emb_dim, hidden_size=hid_dim, num_layers=2, dropout=0.2, batch_first=True, bidirectional=True)
+        self.fc = nn.Sequential(
+                nn.Linear(hid_dim*4, emb_dim),
+                nn.ReLU(),
+                nn.Linear(emb_dim, 2),
+                nn.Softmax(dim=-1)
+        )
+        
+    def forward(self, x):
+        x = self.emb(x)
+        output, (h,c) = self.lstm(x)
+        h = h.reshape(h.size(1), -1)
+        out = self.fc(h)
+        return out
+
+
 class ALComponent(nn.Module):
 
     x: Tensor
