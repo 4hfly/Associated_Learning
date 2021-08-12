@@ -4,21 +4,33 @@ from collections import Counter
 import time
 import torch
 import torch.nn as nn
-import tqdm
+from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torchtext.data.functional import to_map_style_dataset
 from torchtext.data.utils import get_tokenizer
 from torchtext.datasets import IMDB
 from torchtext.vocab import FastText, Vocab
 
-from model import LSTMAL, EmbeddingAL
+from model import LSTMAL, EmbeddingAL, CLS
+
+
+def get_n_params(model):
+    pp=0
+    for p in list(model.parameters()):
+        nn=1
+        for s in list(p.size()):
+            nn = nn*s
+        pp += nn
+    return pp
 
 
 class Dataset(object):
 
     def __init__(self, train_data) -> None:
-
+        
+        self.train_data = train_data
         self.create_vocab()
+        self.train_data = train_data
         self.vocab_size = self.vocab.__len__
         self.dataloader = DataLoader(
             train_data, batch_size=8, collate_fn=self.collate_fn)
@@ -79,9 +91,13 @@ class Trainer(object):
             self.layer_1,
             self.layer_2
         )
+        print('AL parameter num', get_n_params(self.model))
         self.optimizer_1 = torch.optim.Adam(self.model.parameters(), lr=1e-4)
         self.optimizer_2 = torch.optim.Adam(self.model.parameters(), lr=1e-4)
         self.optimizer_3 = torch.optim.Adam(self.model.parameters(), lr=1e-4)
+        self.model = CLS(dataset.vocab_size, 300, 400)
+        print('parameter num',get_n_params(self.model))
+        self.optimizer_1 = torch.optim.Adam(self.model.parameters(), lf=1e-4)
 
     def train(self, epoch):
 
@@ -98,6 +114,12 @@ class Trainer(object):
             self.optimizer_2.zero_grad()
             self.optimizer_3.zero_grad()
 
+            out = self.model(text)
+            loss = F.cross_entropy_loss(out, label)
+            loss.backward()
+            self.optimizer_1.step()
+            predicted_label = out
+            '''
             # emb layer
             x, y = self.embedding(text, label)
             loss = self.embedding.loss()
@@ -121,6 +143,7 @@ class Trainer(object):
             right = self.layer_2.bx(left)
             predicted_label = self.embedding.dy(
                 self.layer_1.dy(self.layer_2.dy(right)))
+            '''
 
             total_acc += (predicted_label.argmax(1) == label).sum().item()
             total_count += label.size(0)
@@ -139,11 +162,14 @@ class Trainer(object):
 
         with torch.no_grad():
             for label, text in self.dataloader:
+                out = self.model(text)
+                predicted_label = out
+                '''
                 left = self.layer_2.f(self.layer_1.f(self.embedding(text)))
                 right = self.layer_2.bx(left)
                 predicted_label = self.embedding.dy(
                     self.layer_1.dy(self.layer_2.dy(right)))
-
+                '''
             total_acc += (predicted_label.argmax(1) == label).sum().item()
             total_count += label.size(0)
 
