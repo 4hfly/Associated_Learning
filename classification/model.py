@@ -4,7 +4,6 @@ from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
 from torch import Tensor
-from torch.nn.modules.activation import Sigmoid
 from torchtext.vocab import Vectors
 
 CONFIG = {
@@ -131,7 +130,7 @@ class EmbeddingAL(ALComponent):
         padding_idx: int = 0,
         reverse: bool = False
     ) -> None:
-
+        pretrained=False
         if pretrained:
             embeddings = torch.FloatTensor(pretrained.vectors)
             f = nn.Embedding.from_pretrained(
@@ -148,17 +147,11 @@ class EmbeddingAL(ALComponent):
         )
         by = nn.Sequential(
             nn.Linear(embedding_dim[1], embedding_dim[0]),
-            nn.Sigmoid
+            nn.Sigmoid()
         )
         # h function
-        dx = nn.Sequential(
-            nn.Linear(embedding_dim[0], num_embeddings[0]),
-            nn.Sigmoid()
-        )
-        dy = nn.Sequential(
-            nn.Linear(embedding_dim[1], num_embeddings[1]),
-            nn.Sigmoid()
-        )
+        dx = nn.Linear(embedding_dim[0], num_embeddings[0])
+        dy = nn.Linear(embedding_dim[1], num_embeddings[1])
         # loss function
         cb = nn.MSELoss()
         ca = nn.BCEWithLogitsLoss()
