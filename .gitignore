@@ -526,11 +526,12 @@ dmypy.json
 cython_debug/
 
 # our data
+*.pkl
+*.tfrecords
 .data/*
 .vector_cache/*
 data/wikitext-103-raw/
 data/wmt14/
-*.tfrecords
 lm/__pycache__/
 lm/data/pretrain
 lm/data/train

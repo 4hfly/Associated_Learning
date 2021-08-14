@@ -22,24 +22,24 @@ CONFIG = {
 
 class CLS(nn.Module):
     def __init__(self, vocab_size, emb_dim, hid_dim, emb=None):
-            
+
         super(CLS, self).__init__()
         if emb:
             self.emb = emb
         else:
             self.emb = nn.Embedding(vocab_size, emb_dim)
         self.lstm = nn.LSTM(
-                input_size=emb_dim, hidden_size=hid_dim, num_layers=2, dropout=0.2, batch_first=True, bidirectional=True)
+            input_size=emb_dim, hidden_size=hid_dim, num_layers=2, dropout=0.2, batch_first=True, bidirectional=True)
         self.fc = nn.Sequential(
-                nn.Linear(hid_dim*4, emb_dim),
-                nn.ReLU(),
-                nn.Linear(emb_dim, 2),
-                nn.Softmax(dim=-1)
+            nn.Linear(hid_dim*4, emb_dim),
+            nn.ReLU(),
+            nn.Linear(emb_dim, 2),
+            nn.Softmax(dim=-1)
         )
-        
+
     def forward(self, x):
         x = self.emb(x)
-        output, (h,c) = self.lstm(x)
+        output, (h, c) = self.lstm(x)
         h = h.reshape(h.size(1), -1)
         out = self.fc(h)
         return out
@@ -68,6 +68,9 @@ class ALComponent(nn.Module):
     ) -> None:
 
         super(ALComponent, self).__init__()
+
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
 
         self.f = f
         self.g = g
@@ -133,14 +136,15 @@ class EmbeddingAL(ALComponent):
         padding_idx: int = 0,
         reverse: bool = False
     ) -> None:
-        pretrained=False
-        if pretrained:
-            embeddings = torch.FloatTensor(pretrained.vectors)
+
+        if pretrained is not None:
             f = nn.Embedding.from_pretrained(
-                embeddings, padding_idx=padding_idx)
+                pretrained.vectors, padding_idx=padding_idx)
         else:
             f = nn.Embedding(
                 num_embeddings[0], embedding_dim[0], padding_idx=padding_idx)
+
+        # TODO:
         g = nn.Embedding(
             num_embeddings[1], embedding_dim[1], padding_idx=padding_idx)
         # bridge function
@@ -153,14 +157,38 @@ class EmbeddingAL(ALComponent):
             nn.Sigmoid()
         )
         # h function
-        dx = nn.Linear(embedding_dim[0], num_embeddings[0])
-        dy = nn.Linear(embedding_dim[1], num_embeddings[1])
+        dx = nn.Sequential(
+            nn.Linear(embedding_dim[0], num_embeddings[0]),
+            nn.Sigmoid()
+        )
+        dy = nn.Sequential(
+            nn.Linear(embedding_dim[1], num_embeddings[1]),
+            nn.Sigmoid()
+        )
         # loss function
-        cb = nn.MSELoss()
+        cb = nn.MSELoss(reduction='sum')
         ca = nn.BCEWithLogitsLoss()
 
         super(EmbeddingAL, self).__init__(
             f, g, bx, by, dx, dy, cb, ca, reverse=reverse)
+
+    def loss(self):
+
+        p = self._s
+        q = self._t
+        p_nonzero = (p != 0.).sum(dim=0)
+        q_nonzero = (q != 0.).sum(dim=0)
+        p = p.sum(0) / p_nonzero
+        q = q.sum(0) / q_nonzero
+
+        if not self.reverse:
+            loss_b = self.criterion_br(self.bx(p), q)
+            loss_d = self.criterion_ae(self._t_prime, self.y)
+        else:
+            loss_b = self.criterion_br(self.by(q), p)
+            loss_d = self.criterion_ae(self._s_prime, self.x)
+
+        return loss_b + loss_d
 
 
 class LinearAL(ALComponent):
@@ -226,6 +254,11 @@ class LSTMAL(ALComponent):
         reverse: bool = False
     ) -> None:
 
+        if bidirectional:
+            d = 2
+        else:
+            d = 1
+
         f = nn.LSTM(
             input_size,
             hidden_size[0],
@@ -238,7 +271,7 @@ class LSTMAL(ALComponent):
         g = nn.Linear(output_size, hidden_size[1])
         # bridge function
         bx = nn.Sequential(
-            nn.Linear(hidden_size[0], hidden_size[1]),
+            nn.Linear(hidden_size[0] * d, hidden_size[1]),
             nn.Sigmoid()
         )
         by = nn.Sequential(
@@ -246,7 +279,7 @@ class LSTMAL(ALComponent):
             nn.Sigmoid()
         )
         # h function
-        dx = nn.LSTM(hidden_size[0], input_size)
+        dx = nn.LSTM(hidden_size[0] * d, input_size)
         dy = nn.Sequential(
             nn.Linear(hidden_size[1], output_size),
             nn.Sigmoid()

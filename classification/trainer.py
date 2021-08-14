@@ -3,116 +3,100 @@ import time
 
 import torch
 import torch.nn as nn
-from tqdm import tqdm
 from torch.utils.data import DataLoader
+from torchtext.vocab import FastText
 
+from model import CLS, LSTMAL, EmbeddingAL
 from read_raw import IMDB, get_emb
 
-from model import LSTMAL, EmbeddingAL, CLS
-import torch.nn.functional as F
-from collections import Counter
-
-from tqdm import tqdm
 
 def get_n_params(model):
-    pp=0
+    pp = 0
     for p in list(model.parameters()):
-        nn=1
+        nn = 1
         for s in list(p.size()):
             nn = nn*s
         pp += nn
     return pp
 
+
 class Trainer(object):
 
     def __init__(self, dataset, testset) -> None:
 
-        self.dataloader = DataLoader(dataset, batch_size=64, collate_fn=dataset.collate, shuffle=True)
-        self.testloader = DataLoader(testset, batch_size=16, collate_fn=testset.collate)
-
-        emb = get_emb(dataset.vocab)
+        self.dataloader = DataLoader(
+            dataset, batch_size=64, collate_fn=dataset.collate, shuffle=True)
+        self.testloader = DataLoader(
+            testset, batch_size=16, collate_fn=testset.collate)
 
         self.device = torch.device(
             "cuda" if torch.cuda.is_available() else "cpu")
 
         # TODO: emb_size for y
         # TODO: magic number (300, 2)
-
+        emb = FastText()
         self.embedding = EmbeddingAL((
             20000, 2), (300, 128), pretrained=emb)
-        self.layer_1 = LSTMAL(300, 128, (128, 128))
-        self.layer_2 = LSTMAL(128, 128, (64, 64))
-        self.model = nn.Sequential(
+        self.layer_1 = LSTMAL(300, 128, (128, 128), dropout=0.2, bidirectional=True)
+        self.layer_2 = LSTMAL(128, 128, (64, 64), dropout=0.2, bidirectional=True)
+        self.layers = nn.Sequential(
             self.embedding,
             self.layer_1,
             self.layer_2
         )
+        self.layers = self.layers.to(self.device)
+        print('AL parameter num', get_n_params(self.layers))
 
-        print('AL parameter num', get_n_params(self.model))
-        # self.optimizer_1 = torch.optim.Adam(self.model.parameters(), lr=1e-4)
-        # self.optimizer_2 = torch.optim.Adam(self.model.parameters(), lr=1e-4)
-        # self.optimizer_3 = torch.optim.Adam(self.model.parameters(), lr=1e-4)
+        emb = get_emb(dataset.vocab)
         self.model = CLS(30000, 325, 400, emb=emb)
         self.model = self.model.to(self.device)
-        print('parameter num',get_n_params(self.model))
-        self.optimizer_1 = torch.optim.Adam(self.model.parameters())
-        # self.model = self.model.to(self.device)
+        print('parameter num', get_n_params(self.model))
 
+        self.optimizer_1 = torch.optim.Adam(self.model.parameters(), lr=1e-4)
+        self.optimizer_2 = torch.optim.Adam(self.model.parameters(), lr=1e-4)
+        self.optimizer_3 = torch.optim.Adam(self.model.parameters(), lr=1e-4)
 
     def train(self, epoch):
 
-        self.model.train()
+        # NOTE:
+        self.layers.train()
 
         # log params
         total_acc, total_count = 0, 0
         log_interval = 20
         start_time = time.time()
-        idx=0
+        idx = 0
         total_loss = 0
-        total_batch=0
+        total_batch = 0
+
         for i, (text, label) in enumerate(self.dataloader):
-            # print(text)
-            idx+=1
-            total_batch+=1
+
+            idx += 1
+            total_batch += 1
             self.optimizer_1.zero_grad()
-            # self.optimizer_2.zero_grad()
-            # self.optimizer_3.zero_grad()
+            self.optimizer_2.zero_grad()
+            self.optimizer_3.zero_grad()
             text, label = text.to(self.device), label.to(self.device)
 
-            out = self.model(text)
-        
-            loss = F.cross_entropy(out, label)
-            loss.backward()
-            total_loss += loss.item()
-            self.optimizer_1.step()
-            
-            predicted_label = out
-            total_acc += (predicted_label.argmax(1) == label).sum().item()
-            total_count += label.size(0)
-            if idx % log_interval == 0 and idx > 0:
-                elapsed = time.time() - start_time
-                print(
-                        f'| epoch {epoch:3d} | {idx:5d}/{len(self.dataloader):5d} batches | accuracy {total_acc/total_count:8.3f} | loss {total_loss/total_batch:8.3f}')
-                total_acc, total_count = 0, 0
-                total_loss, total_batch = 0, 0
-                start_time = time.time()
-            '''
             # emb layer
             x, y = self.embedding(text, label)
             loss = self.embedding.loss()
             loss.backward()
+            total_loss += loss.item()
             self.optimizer_1.step()
 
             # 1st lstm
             x, hx, y = self.layer_1(x, y)
             loss = self.layer_1.loss()
             loss.backward()
+            total_loss += loss.item()
             self.optimizer_2.step()
 
             # 2nd lstm
             x, hx, y = self.layer_2(x, y, hx)
             loss = self.layer_2.loss()
             loss.backward()
+            total_loss += loss.item()
             self.optimizer_3.step()
 
             # inference
@@ -120,24 +104,26 @@ class Trainer(object):
             right = self.layer_2.bx(left)
             predicted_label = self.embedding.dy(
                 self.layer_1.dy(self.layer_2.dy(right)))
-            '''
 
-            # total_acc += (predicted_label.argmax(1) == label).sum().item()
-            # total_count += label.size(0)
-            # if idx % log_interval == 0 and idx > 0:
-            #     elapsed = time.time() - start_time
-            #     print(
-            #         f'| epoch {epoch:3d} | {idx:5d}/{len(self.dataloader):5d} batches | accuracy {total_acc/total_count:8.3f}')
-            #     total_acc, total_count = 0, 0
-            #     start_time = time.time()
+            total_acc += (predicted_label.argmax(1) == label).sum().item()
+            total_count += label.size(0)
+            if idx % log_interval == 0 and idx > 0:
+                elapsed = time.time() - start_time
+                print(
+                    f'| epoch {epoch:3d} | {idx:5d}/{len(self.dataloader):5d} batches | accuracy {total_acc/total_count:8.3f} | loss {total_loss/total_batch:8.3f}')
+                total_acc, total_count = 0, 0
+                total_loss, total_batch = 0, 0
+                start_time = time.time()
 
     def evaluate(self):
 
-        self.model.eval()
+        # NOTE:
+        self.layers.eval()
 
         total_acc, total_count = 0, 0
 
         with torch.no_grad():
+
             for text, label in self.testloader:
                 text, label = text.to(self.device), label.to(self.device)
                 out = self.model(text)
@@ -172,6 +158,7 @@ def main():
     # trainer.model.load_state_dict(torch.load('./lstm_imdb.pth'))
     # best_acc = trainer.eval()
     print('this is the best acc', best_val_acc)
+
 
 if __name__ == '__main__':
     main()
