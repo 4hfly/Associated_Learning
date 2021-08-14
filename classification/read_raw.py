@@ -9,6 +9,8 @@ import gensim
 from gensim.corpora import Dictionary
 
 from nltk.corpus import stopwords
+from torchnlp.word_to_vector import GloVe
+import torch.nn as nn
 
 def build_vocab():
     with open('imdb.txt') as f:
@@ -32,6 +34,17 @@ def build_vocab():
     vocab.save('imdb_vocab.pkl')
 
 
+def get_emb(vocab):
+    vectors = GloVe(name='6B',dim=300)
+    w = []
+    for word in vocab.token2id.keys():
+        try:
+            w.append(vectors[word])
+        except:
+            w.append(torch.zeros(300))
+    w = torch.stack(w,dim=0)
+    return nn.Embedding.from_pretrained(w, freeze=False, padding_idx=0)
+
 # build_vocab()
 
 class IMDB(Dataset):
@@ -46,48 +59,52 @@ class IMDB(Dataset):
 
     def read_data(self):
         if self.mode == 'train':
-            df = pd.read_excel('train.xlsx')
-            reviews = df['Reviews'].tolist()
+            df = pd.read_csv('train.csv')
+            reviews = df['review'].tolist()
             input_data = []
             for s in reviews:
                 ids = []
-                
-                s = s.lower()
+                if type(s) == str:
+                    s = s.lower()
+                else:
+                    s = '<pad> <pad>'
                 for tok in s.split():
                     if tok in self.stop_words:
                         continue
                     try:
-                        ids.append(vocab.token2id[tok])
+                        ids.append(self.vocab.token2id[tok])
                     except:
-                        ids.append(vocab.token2id['<unk>'])
+                        ids.append(self.vocab.token2id['<unk>'])
                 input_data.append(ids)
             
             self.input_data = input_data
-            label = df['Sentiment'].tolist()
-            mapp = {'neg':0, 'pos':1}
+            label = df['sentiment'].tolist()
+            mapp = {'negative':0, 'positive':1}
             self.label = [mapp[l] for l in label]
         else:
-            df = pd.read_excel('test.xlsx')
+            df = pd.read_csv('test.csv')
 
-            reviews = df['Reviews'].tolist()
+            reviews = df['review'].tolist()
             input_data = []
 
             for s in reviews:
                 ids = []
-                
-                s = s.lower()
+                if type(s) == str:
+                    s = s.lower()
+                else:
+                    s = '<pad> <pad>'
                 for tok in s.split():
                     if tok in self.stop_words:
                         continue
                     try:
-                        ids.append(vocab.token2id[tok])
+                        ids.append(self.vocab.token2id[tok])
                     except:
-                        ids.append(vocab.token2id['<unk>'])
+                        ids.append(self.vocab.token2id['<unk>'])
                 input_data.append(ids)
 
             self.input_data = input_data
-            label = df['Sentiment'].tolist()
-            mapp = {'neg':0, 'pos':1}
+            label = df['sentiment'].tolist()
+            mapp = {'negative':0, 'positive':1}
             self.label = [mapp[l] for l in label]
         assert len(self.label) == len(self.input_data)
 

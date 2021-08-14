@@ -6,7 +6,7 @@ import torch.nn as nn
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
-from read_raw import IMDB
+from read_raw import IMDB, get_emb
 
 from model import LSTMAL, EmbeddingAL, CLS
 import torch.nn.functional as F
@@ -30,30 +30,33 @@ class Trainer(object):
         self.dataloader = DataLoader(dataset, batch_size=64, collate_fn=dataset.collate, shuffle=True)
         self.testloader = DataLoader(testset, batch_size=16, collate_fn=testset.collate)
 
+        emb = get_emb(dataset.vocab)
+
         self.device = torch.device(
             "cuda" if torch.cuda.is_available() else "cpu")
 
         # TODO: emb_size for y
         # TODO: magic number (300, 2)
-        # pretrained = FastText()
-        # self.embedding = EmbeddingAL(
-        #     20000, 2), (300, 128), pretrained=None)
-        # self.layer_1 = LSTMAL(300, 128, (128, 128))
-        # self.layer_2 = LSTMAL(128, 128, (64, 64))
-        # self.model = nn.Sequential(
-        #     self.embedding,
-        #     self.layer_1,
-        #     self.layer_2
-        # )
 
-        # print('AL parameter num', get_n_params(self.model))
+        self.embedding = EmbeddingAL((
+            20000, 2), (300, 128), pretrained=emb)
+        self.layer_1 = LSTMAL(300, 128, (128, 128))
+        self.layer_2 = LSTMAL(128, 128, (64, 64))
+        self.model = nn.Sequential(
+            self.embedding,
+            self.layer_1,
+            self.layer_2
+        )
+
+        print('AL parameter num', get_n_params(self.model))
         # self.optimizer_1 = torch.optim.Adam(self.model.parameters(), lr=1e-4)
         # self.optimizer_2 = torch.optim.Adam(self.model.parameters(), lr=1e-4)
         # self.optimizer_3 = torch.optim.Adam(self.model.parameters(), lr=1e-4)
-        self.model = CLS(30522, 325, 400)
+        self.model = CLS(30000, 325, 400, emb=emb)
+        self.model = self.model.to(self.device)
         print('parameter num',get_n_params(self.model))
         self.optimizer_1 = torch.optim.Adam(self.model.parameters())
-        self.model = self.model.to(self.device)
+        # self.model = self.model.to(self.device)
 
 
     def train(self, epoch):
