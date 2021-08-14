@@ -4,7 +4,35 @@ import sentencepiece as spm
 from torch.nn.utils.rnn import pad_sequence
 import torch
 
-from transformers import BertTokenizer
+import gensim
+
+from gensim.corpora import Dictionary
+
+from nltk.corpus import stopwords
+
+def build_vocab():
+    with open('imdb.txt') as f:
+        lines = f.readlines()
+    stop_words = set(stopwords.words('english'))
+    lines = [line.lower().replace('\n', '').split() for line in lines]
+    for i in range(len(lines)):
+        for j in range(len(lines[i])):
+            if lines[i][j] in stop_words:
+                lines[i][j] = ''
+
+    vocab = Dictionary(lines, prune_at=29998)
+    special_tokens = {'<pad>': 0, '<unk>': 1}
+    vocab.filter_extremes(keep_n=29998)
+    vocab.patch_with_special_tokens(special_tokens)
+    # vocab.filter_extremes(keep_n=24998)
+    print(len(vocab))
+    
+    print(vocab.token2id['<pad>'])
+    print(vocab.token2id['great'])
+    vocab.save('imdb_vocab.pkl')
+
+
+# build_vocab()
 
 class IMDB(Dataset):
     
@@ -12,12 +40,8 @@ class IMDB(Dataset):
         super().__init__()
 
         self.mode=mode
-        
-        # self.sp = spm.SentencePieceProcessor()
-        # self.sp.load('m_bpe.model')
-       
-        self.tkr = BertTokenizer.from_pretrained("bert-base-uncased")
-        print(self.tkr.encode("[PAD]"))
+        self.vocab = Dictionary.load('imdb_vocab.pkl')
+        self.stop_words = set(stopwords.words('english'))
         self.read_data()
 
     def read_data(self):
@@ -26,14 +50,18 @@ class IMDB(Dataset):
             reviews = df['Reviews'].tolist()
             input_data = []
             for s in reviews:
-                try:
-                    s = s.lower()
-                    s = self.tkr.encode(s)['input_ids']
-                    s = s[1:-1]
-                    input_data.append(s)
-                except:
-                    input_data.append([0])
-                    # reviews = [self.sp.encode(s) for s in reviews]
+                ids = []
+                
+                s = s.lower()
+                for tok in s.split():
+                    if tok in self.stop_words:
+                        continue
+                    try:
+                        ids.append(vocab.token2id[tok])
+                    except:
+                        ids.append(vocab.token2id['<unk>'])
+                input_data.append(ids)
+            
             self.input_data = input_data
             label = df['Sentiment'].tolist()
             mapp = {'neg':0, 'pos':1}
@@ -43,14 +71,20 @@ class IMDB(Dataset):
 
             reviews = df['Reviews'].tolist()
             input_data = []
+
             for s in reviews:
-                try:
-                    s = s.lower()
-                    s = self.tkr.encode(s)['input_ids'][1:-1]
-                    input_data.append(s)
-                except:
-                    input_data.append([0])
-                    # reviews = [self.sp.encode(s) for s in reviews]
+                ids = []
+                
+                s = s.lower()
+                for tok in s.split():
+                    if tok in self.stop_words:
+                        continue
+                    try:
+                        ids.append(vocab.token2id[tok])
+                    except:
+                        ids.append(vocab.token2id['<unk>'])
+                input_data.append(ids)
+
             self.input_data = input_data
             label = df['Sentiment'].tolist()
             mapp = {'neg':0, 'pos':1}

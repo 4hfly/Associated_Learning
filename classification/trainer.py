@@ -75,14 +75,15 @@ class Trainer(object):
             # self.optimizer_2.zero_grad()
             # self.optimizer_3.zero_grad()
             text, label = text.to(self.device), label.to(self.device)
+
             out = self.model(text)
+        
             loss = F.cross_entropy(out, label)
             loss.backward()
             total_loss += loss.item()
             self.optimizer_1.step()
             
             predicted_label = out
-            print(predicted_label.argmax(1))
             total_acc += (predicted_label.argmax(1) == label).sum().item()
             total_count += label.size(0)
             if idx % log_interval == 0 and idx > 0:
@@ -157,7 +158,7 @@ def main():
 
     trainer = Trainer(train, test)
     best_val_acc = -1
-    for epoch in range(1, 11):
+    for epoch in range(1, 30):
         epoch_start_time = time.time()
         trainer.train(epoch)
         val_acc = trainer.evaluate()
