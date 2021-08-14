@@ -24,7 +24,7 @@ class CLS(nn.Module):
     def __init__(self, vocab_size, emb_dim, hid_dim):
             
         super(CLS, self).__init__()
-        self.emb = nn.Emeddings(vocab_size, emb_dim)
+        self.emb = nn.Embedding(vocab_size, emb_dim)
         self.lstm = nn.LSTM(
                 input_size=emb_dim, hidden_size=hid_dim, num_layers=2, dropout=0.2, batch_first=True, bidirectional=True)
         self.fc = nn.Sequential(
