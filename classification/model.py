@@ -161,8 +161,10 @@ class EmbeddingAL(ALComponent):
             nn.Linear(embedding_dim[0], num_embeddings[0]),
             nn.Sigmoid()
         )
+
+        output_dim = 1
         dy = nn.Sequential(
-            nn.Linear(embedding_dim[1], num_embeddings[1]),
+            nn.Linear(embedding_dim[1], output_dim),
             nn.Sigmoid()
         )
         # loss function
@@ -176,17 +178,17 @@ class EmbeddingAL(ALComponent):
 
         p = self._s
         q = self._t
-        p_nonzero = (p != 0.).sum(dim=0)
-        q_nonzero = (q != 0.).sum(dim=0)
-        p = p.sum(0) / p_nonzero
-        q = q.sum(0) / q_nonzero
+        p_nonzero = (p != 0.).sum(dim=1)
+        p = p.sum(dim=1) / p_nonzero
 
         if not self.reverse:
             loss_b = self.criterion_br(self.bx(p), q)
-            loss_d = self.criterion_ae(self._t_prime, self.y)
+            loss_d = self.criterion_ae(
+                self._t_prime.squeeze(1), self.y.to(torch.float))
         else:
             loss_b = self.criterion_br(self.by(q), p)
-            loss_d = self.criterion_ae(self._s_prime, self.x)
+            loss_d = self.criterion_ae(
+                self._s_prime.squeeze(1), self.x.to(torch.float))
 
         return loss_b + loss_d
 
@@ -275,10 +277,11 @@ class LSTMAL(ALComponent):
             nn.Sigmoid()
         )
         by = nn.Sequential(
-            nn.Linear(hidden_size[1], hidden_size[0]),
+            nn.Linear(hidden_size[1], hidden_size[0] * d),
             nn.Sigmoid()
         )
         # h function
+        # NOTE: dx
         dx = nn.LSTM(hidden_size[0] * d, input_size)
         dy = nn.Sequential(
             nn.Linear(hidden_size[1], output_size),
@@ -319,23 +322,28 @@ class LSTMAL(ALComponent):
 
             self._s, (self._h_nx, c_nx) = self.f(x, hx)
             self._s_prime = self.dx(self._s)
-            self._t = self.g(y, hy)
+            self._t = self.g(y)
             self._t_prime = self.dy(self._t)
-            return self._s.detach(), (self._h_nx, c_nx), self._t.detach()
+            return self._s.detach(), (self._h_nx.detach(), c_nx.detach()), self._t.detach()
 
         else:
 
             if not self.reverse:
                 self._s, (self._h_nx, c_nx) = self.f(x, hx)
                 self._t_prime = self.dy(self.bx(self._s))
-                return self._s.detach(), (self._h_nx, c_nx), self._t_prime.detach()
+                return self._s.detach(), (self._h_nx.detach(), c_nx.detach()), self._t_prime.detach()
             else:
                 raise Exception()
 
     def loss(self):
 
+        p = self._s
+        q = self._t
+        p_nonzero = (p != 0.).sum(dim=1)
+        p = p.sum(dim=1) / p_nonzero
+
         if not self.reverse:
-            loss_b = self.criterion_br(self.bx(self._s), self._t)
+            loss_b = self.criterion_br(self.bx(p), q)
             loss_d = self.criterion_ae(self._t_prime, self.y)
         else:
             raise Exception()
