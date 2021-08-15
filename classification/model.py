@@ -148,10 +148,16 @@ class EmbeddingAL(ALComponent):
         g = nn.Embedding(
             num_embeddings[1], embedding_dim[1], padding_idx=padding_idx)
         # bridge function
-        bx = nn.Sequential(
-            nn.Linear(embedding_dim[0], embedding_dim[1]),
-            nn.Sigmoid()
-        )
+        if embedding_dim[1] == 2:
+            bx = nn.Sequential(
+                nn.Linear(embedding_dim[0], embedding_dim[1]-1),
+                nn.Sigmoid()
+            )
+        else:
+            bx = nn.Sequential(
+                nn.Linear(embedding_dim[0], embedding_dim[1]),
+                nn.Sigmoid()
+            )
         by = nn.Sequential(
             nn.Linear(embedding_dim[1], embedding_dim[0]),
             nn.Sigmoid()
@@ -169,7 +175,8 @@ class EmbeddingAL(ALComponent):
         )
         # loss function
         cb = nn.MSELoss(reduction='sum')
-        ca = nn.BCEWithLogitsLoss()
+        ca = nn.CrossEntropyLoss()
+        # ca = nn.BCEWithLogitsLoss()
 
         super(EmbeddingAL, self).__init__(
             f, g, bx, by, dx, dy, cb, ca, reverse=reverse)
@@ -182,6 +189,7 @@ class EmbeddingAL(ALComponent):
         p = p.sum(dim=1) / p_nonzero
 
         if not self.reverse:
+            # print(self.bx(p).shape)
             loss_b = self.criterion_br(self.bx(p), q)
             loss_d = self.criterion_ae(
                 self._t_prime.squeeze(1), self.y.to(torch.float))
