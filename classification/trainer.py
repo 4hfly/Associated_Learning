@@ -25,20 +25,23 @@ class Trainer(object):
     def __init__(self, dataset, testset) -> None:
 
         self.dataloader = DataLoader(
-            dataset, batch_size=64, collate_fn=dataset.collate, shuffle=True)
+            dataset, batch_size=4, collate_fn=dataset.collate, shuffle=True)
         self.testloader = DataLoader(
-            testset, batch_size=16, collate_fn=testset.collate)
+            testset, batch_size=4, collate_fn=testset.collate)
 
         self.device = torch.device(
             "cuda" if torch.cuda.is_available() else "cpu")
 
         # TODO: emb_size for y
         # TODO: magic number (300, 2)
+        # NOTE: hid_size_1 = (128, 128), hid_size_2 = (hid_size_1[0] * 2, hid_size_1[1])
         emb = FastText()
         self.embedding = EmbeddingAL((
-            20000, 2), (300, 128), pretrained=emb)
-        self.layer_1 = LSTMAL(300, 128, (128, 128), dropout=0.2, bidirectional=True)
-        self.layer_2 = LSTMAL(128, 128, (64, 64), dropout=0.2, bidirectional=True)
+            30000, 2), (300, 128), pretrained=emb)
+        self.layer_1 = LSTMAL(300, 128, (128, 128),
+                              batch_first=True, bidirectional=True)
+        self.layer_2 = LSTMAL(
+            256, 128, (128, 128), batch_first=True, bidirectional=True)
         self.layers = nn.Sequential(
             self.embedding,
             self.layer_1,
@@ -100,10 +103,13 @@ class Trainer(object):
             self.optimizer_3.step()
 
             # inference
-            left = self.layer_2.f(self.layer_1.f(self.embedding.f(text)))
+            left = self.embedding.f(text)
+            left, _ = self.layer_1.f(left)
+            left, _ = self.layer_2.f(left)
             right = self.layer_2.bx(left)
-            predicted_label = self.embedding.dy(
-                self.layer_1.dy(self.layer_2.dy(right)))
+            right = self.layer_2.dy(right)
+            right = self.layer_1.dy(right)
+            predicted_label = self.embedding.dy(right)
 
             total_acc += (predicted_label.argmax(1) == label).sum().item()
             total_count += label.size(0)

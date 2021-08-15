@@ -139,7 +139,7 @@ class EmbeddingAL(ALComponent):
 
         if pretrained is not None:
             f = nn.Embedding.from_pretrained(
-                pretrained, padding_idx=padding_idx)
+                pretrained.vectors, padding_idx=padding_idx)
         else:
             f = nn.Embedding(
                 num_embeddings[0], embedding_dim[0], padding_idx=padding_idx)
@@ -148,16 +148,10 @@ class EmbeddingAL(ALComponent):
         g = nn.Embedding(
             num_embeddings[1], embedding_dim[1], padding_idx=padding_idx)
         # bridge function
-        if embedding_dim[1] == 2:
-            bx = nn.Sequential(
-                nn.Linear(embedding_dim[0], embedding_dim[1]-1),
-                nn.Sigmoid()
-            )
-        else:
-            bx = nn.Sequential(
-                nn.Linear(embedding_dim[0], embedding_dim[1]),
-                nn.Sigmoid()
-            )
+        bx = nn.Sequential(
+            nn.Linear(embedding_dim[0], embedding_dim[1]),
+            nn.Sigmoid()
+        )
         by = nn.Sequential(
             nn.Linear(embedding_dim[1], embedding_dim[0]),
             nn.Sigmoid()
@@ -175,7 +169,6 @@ class EmbeddingAL(ALComponent):
         )
         # loss function
         cb = nn.MSELoss(reduction='sum')
-        # ca = nn.CrossEntropyLoss()
         ca = nn.BCEWithLogitsLoss()
 
         super(EmbeddingAL, self).__init__(
