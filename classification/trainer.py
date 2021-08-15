@@ -34,7 +34,7 @@ class Trainer(object):
 
         # TODO: emb_size for y
         # TODO: magic number (300, 2)
-        # NOTE: hid_size_1 = 128, hid_size_2 = 128
+        # NOTE: hid_size_1 = (128, 128), hid_size_2 = (hid_size_1[0] * 2, hid_size_1[1])
         emb = FastText()
         self.embedding = EmbeddingAL((
             30000, 2), (300, 128), pretrained=emb)
