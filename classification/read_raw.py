@@ -66,7 +66,7 @@ class IMDB(Dataset):
     def read_data(self):
 
         if self.mode == 'train':
-            df = pd.read_excel('train.xlsx')
+            df = pd.read_excel('./data/train.xlsx')
             reviews = df['Reviews'].tolist()
             input_data = []
             for s in reviews:
@@ -89,7 +89,7 @@ class IMDB(Dataset):
             mapp = {'neg': 0, 'pos': 1}
             self.label = [mapp[l] for l in label]
         else:
-            df = pd.read_excel('test.xlsx')
+            df = pd.read_excel('./data/test.xlsx')
 
             reviews = df['Reviews'].tolist()
             input_data = []
