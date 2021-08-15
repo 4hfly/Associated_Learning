@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
 from torch import Tensor
-from torchtext.vocab import Vectors
+# from torchtext.vocab import Vectors
 
 CONFIG = {
     "loss_function": "MSE",
@@ -132,14 +132,14 @@ class EmbeddingAL(ALComponent):
         self,
         num_embeddings: Tuple[int, int],
         embedding_dim: Tuple[int, int],
-        pretrained: Vectors = None,
+        pretrained: int = None,
         padding_idx: int = 0,
         reverse: bool = False
     ) -> None:
 
         if pretrained is not None:
             f = nn.Embedding.from_pretrained(
-                pretrained.vectors, padding_idx=padding_idx)
+                pretrained, padding_idx=padding_idx)
         else:
             f = nn.Embedding(
                 num_embeddings[0], embedding_dim[0], padding_idx=padding_idx)
