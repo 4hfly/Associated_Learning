@@ -132,14 +132,15 @@ class Trainer(object):
 
             for text, label in self.testloader:
                 text, label = text.to(self.device), label.to(self.device)
-                out = self.model(text)
-                predicted_label = out
-                '''
-                left = self.layer_2.f(self.layer_1.f(self.embedding(text)))
+
+                left = self.embedding.f(text)
+                left, _ = self.layer_1.f(left)
+                left, _ = self.layer_2.f(left)
                 right = self.layer_2.bx(left)
-                predicted_label = self.embedding.dy(
-                    self.layer_1.dy(self.layer_2.dy(right)))
-                '''
+                right = self.layer_2.dy(right)
+                right = self.layer_1.dy(right)
+                predicted_label = self.embedding.dy(right)
+
             total_acc += (predicted_label.argmax(1) == label).sum().item()
             total_count += label.size(0)
 
