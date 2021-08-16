@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
 from torch import Tensor
-from torchtext.vocab import Vectors
+# from torchtext.vocab import Vectors
 
 CONFIG = {
     "loss_function": "MSE",
@@ -133,7 +133,7 @@ class EmbeddingAL(ALComponent):
         num_embeddings: Tuple[int, int],
         embedding_dim: Tuple[int, int],
         pretrained: int = None,
-        padding_idx: Vectors = 0,
+        padding_idx: int = 0,
         reverse: bool = False
     ) -> None:
 
@@ -192,7 +192,6 @@ class EmbeddingAL(ALComponent):
 
         return loss_b + loss_d
 
-
 class LinearAL(ALComponent):
     """
     For classification.
@@ -234,7 +233,7 @@ class LinearAL(ALComponent):
         super(LinearAL, self).__init__(
             f, g, bx, by, dx, dy, cb, ca, reverse=reverse)
 
-
+            
 class LSTMAL(ALComponent):
     """
     For classification.
