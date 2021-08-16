@@ -103,15 +103,16 @@ class Trainer(object):
             self.optimizer_3.step()
 
             # inference
-            left = self.embedding.f(text)
-            left, _ = self.layer_1.f(left)
-            left, _ = self.layer_2.f(left)
-            right = self.layer_2.bx(left)
-            right = self.layer_2.dy(right)
-            right = self.layer_1.dy(right)
-            predicted_label = self.embedding.dy(right)
+            x = self.embedding.f(text)
+            x, (h, c) = self.layer_1.f(x)
+            x, (h, c) = self.layer_2.f(x, (h, c))
+            h = h.view(1, -1, 256)
+            y = self.layer_2.bx(h)
+            y = self.layer_2.dy(y)
+            y = self.layer_1.dy(y)
+            predicted_label = torch.round(self.embedding.dy(y).squeeze())
 
-            total_acc += (predicted_label.argmax(1) == label).sum().item()
+            total_acc += (predicted_label == label.to(torch.float)).sum().item()
             total_count += label.size(0)
             if idx % log_interval == 0 and idx > 0:
                 elapsed = time.time() - start_time
@@ -133,15 +134,16 @@ class Trainer(object):
             for text, label in self.testloader:
                 text, label = text.to(self.device), label.to(self.device)
 
-                left = self.embedding.f(text)
-                left, _ = self.layer_1.f(left)
-                left, _ = self.layer_2.f(left)
-                right = self.layer_2.bx(left)
-                right = self.layer_2.dy(right)
-                right = self.layer_1.dy(right)
-                predicted_label = self.embedding.dy(right)
+                x = self.embedding.f(text)
+                x, (h, c) = self.layer_1.f(x)
+                x, (h, c) = self.layer_2.f(x, (h, c))
+                h = h.view(1, -1, 256)
+                y = self.layer_2.bx(h)
+                y = self.layer_2.dy(y)
+                y = self.layer_1.dy(y)
+                predicted_label = torch.round(self.embedding.dy(y).squeeze())
 
-            total_acc += (predicted_label.argmax(1) == label).sum().item()
+            total_acc += (predicted_label == label.to(torch.float)).sum().item()
             total_count += label.size(0)
 
         return total_acc/total_count

@@ -182,7 +182,6 @@ class EmbeddingAL(ALComponent):
         p = p.sum(dim=1) / p_nonzero
 
         if not self.reverse:
-            # print(self.bx(p).shape)
             loss_b = self.criterion_br(self.bx(p), q)
             loss_d = self.criterion_ae(
                 self._t_prime.squeeze(1), self.y.to(torch.float))
