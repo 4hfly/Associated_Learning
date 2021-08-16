@@ -192,6 +192,7 @@ class EmbeddingAL(ALComponent):
 
         return loss_b + loss_d
 
+
 class LinearAL(ALComponent):
     """
     For classification.
@@ -233,7 +234,7 @@ class LinearAL(ALComponent):
         super(LinearAL, self).__init__(
             f, g, bx, by, dx, dy, cb, ca, reverse=reverse)
 
-            
+
 class LSTMAL(ALComponent):
     """
     For classification.
@@ -256,9 +257,9 @@ class LSTMAL(ALComponent):
     ) -> None:
 
         if bidirectional:
-            d = 2
+            self.d = 2
         else:
-            d = 1
+            self.d = 1
 
         f = nn.LSTM(
             input_size,
@@ -272,16 +273,16 @@ class LSTMAL(ALComponent):
         g = nn.Linear(output_size, hidden_size[1])
         # bridge function
         bx = nn.Sequential(
-            nn.Linear(hidden_size[0] * d, hidden_size[1]),
+            nn.Linear(hidden_size[0] * self.d, hidden_size[1]),
             nn.Sigmoid()
         )
         by = nn.Sequential(
-            nn.Linear(hidden_size[1], hidden_size[0] * d),
+            nn.Linear(hidden_size[1], hidden_size[0] * self.d),
             nn.Sigmoid()
         )
         # h function
         # NOTE: dx
-        dx = nn.LSTM(hidden_size[0] * d, input_size)
+        dx = nn.LSTM(hidden_size[0] * self.d, input_size)
         dy = nn.Sequential(
             nn.Linear(hidden_size[1], output_size),
             nn.Sigmoid()
@@ -329,17 +330,18 @@ class LSTMAL(ALComponent):
 
             if not self.reverse:
                 self._s, (self._h_nx, c_nx) = self.f(x, hx)
-                self._t_prime = self.dy(self.bx(self._s))
+                self._h_nx = self._h_nx.view(
+                    1, -1, self._h_nx.size(2) * self.d)
+                self._t_prime = self.dy(self.bx(self._h_nx))
                 return self._s.detach(), (self._h_nx.detach(), c_nx.detach()), self._t_prime.detach()
             else:
                 raise Exception()
 
     def loss(self):
 
-        p = self._s
+        p = self._h_nx
         q = self._t
-        p_nonzero = (p != 0.).sum(dim=1)
-        p = p.sum(dim=1) / p_nonzero
+        p = p.view(1, -1, p.size(2) * self.d)
 
         if not self.reverse:
             loss_b = self.criterion_br(self.bx(p), q)
