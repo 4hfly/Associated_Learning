@@ -250,7 +250,7 @@ class LSTMAL(ALComponent):
         hidden_size: Tuple[int, int],
         num_layers: int = 1,
         bias: bool = True,
-        batch_first: bool = False,
+        batch_first: bool = True,
         dropout: float = 0.,
         bidirectional: bool = False,
         reverse: bool = False
@@ -321,7 +321,10 @@ class LSTMAL(ALComponent):
         if self.training:
 
             self._s, (self._h_nx, c_nx) = self.f(x, hx)
-            self._s_prime = self.dx(self._s)
+            self._h_nx = self._h_nx.reshape(self._h_nx.size(1), -1)
+            print('hx', self._h_nx.shape)
+
+            # self._s_prime = self.dx(self._h_nx)
             self._t = self.g(y)
             self._t_prime = self.dy(self._t)
             return self._s.detach(), (self._h_nx.detach(), c_nx.detach()), self._t.detach()
@@ -337,10 +340,9 @@ class LSTMAL(ALComponent):
 
     def loss(self):
 
-        p = self._s
+        p = self._h_nx
+        print('p', p.shape)
         q = self._t
-        p_nonzero = (p != 0.).sum(dim=1)
-        p = p.sum(dim=1) / p_nonzero
 
         if not self.reverse:
             loss_b = self.criterion_br(self.bx(p), q)

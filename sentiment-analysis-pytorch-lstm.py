@@ -1,7 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-
 
 import numpy as np
 import pandas as pd
@@ -21,19 +17,6 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 import torch.nn as nn
 
-from classification.model import EmbeddingAL, LSTMAL
-
-
-
-def get_n_params(model):
-    pp = 0
-    for p in list(model.parameters()):
-        nn = 1
-        for s in list(p.size()):
-            nn = nn*s
-        pp += nn
-    return pp
-
 
 
 
@@ -49,6 +32,8 @@ def data_preprocessing(text):
     return text
 
 
+
+
 df['cleaned_reviews'] = df['review'].apply(data_preprocessing)
 corpus = [word for text in df['cleaned_reviews'] for word in text.split()]
 count_words = Counter(corpus)
@@ -56,39 +41,48 @@ sorted_words = count_words.most_common()
 
 
 
-vocab_to_int = {w:i+2 for i, (w,c) in enumerate(sorted_words[:29999])}
 
+vocab_to_int = {w:i+2 for i, (w,c) in enumerate(sorted_words[:29999])}
 vocab_to_int['pad'] = 0
 vocab_to_int['unk'] = 1
 
-
-print(max(list(vocab_to_int.values())))
-print(len(vocab_to_int))
-
 reviews_int = []
 for text in df['cleaned_reviews']:
-    r=[]
+    r = []
     for word in text.split():
         try:
             r.append(vocab_to_int[word])
         except:
             r.append(vocab_to_int['unk'])
-    # r = [vocab_to_int[word] for word in text.split() if ]
+    # r = [vocab_to_int[word] for word in text.split()]
     reviews_int.append(r)
 
 # print(reviews_int[:1])
 df['Review int'] = reviews_int
 
 
-df['sentiment'] = df['sentiment'].apply(lambda x: 1 if x == 'positive' else 0)
 
+
+def get_n_params(model):
+    pp = 0
+    for p in list(model.parameters()):
+        nn = 1
+        for s in list(p.size()):
+            nn = nn*s
+        pp += nn
+    return pp
+
+
+
+df['sentiment'] = df['sentiment'].apply(lambda x: 1 if x == 'positive' else 0)
 
 review_len = [len(x) for x in reviews_int]
 df['Review len'] = review_len
+# df.head()
 
-# print(df['Review len'].describe())
 
-# df['Review len'].hist()
+# In[19]:
+
 
 
 def Padding(review_int, seq_len):
@@ -107,7 +101,7 @@ def Padding(review_int, seq_len):
     return features
 
 
-# In[12]:
+# In[21]:
 
 
 features = Padding(reviews_int, 200)
@@ -118,6 +112,11 @@ features = Padding(reviews_int, 200)
 X_train, X_remain, y_train, y_remain = train_test_split(features, df['sentiment'].to_numpy(), test_size=0.2, random_state=1)
 X_valid, X_test, y_valid, y_test = train_test_split(X_remain, y_remain, test_size=0.5, random_state=1)
 
+
+# ## 12) Dataloaders and Batching
+# After creating our training, test and validation data. Next step is to create dataloaders for this data. We can use generator function for batching our data into batches instead we will use a TensorDataset. This is one of a very useful utility in PyTorch for using our data with DataLoaders with exact same ease as of torchvision datasets
+
+# In[23]:
 
 
 # create tensor dataset
@@ -133,7 +132,7 @@ test_loader = DataLoader(test_data, shuffle=True, batch_size=batch_size)
 valid_loader = DataLoader(valid_data, shuffle=True, batch_size=batch_size)
 
 
-# In[15]:
+# In[24]:
 
 
 # obtain one batch of training data
@@ -143,39 +142,76 @@ sample_x, sample_y = dataiter.next()
 
 
 
-class SentAL(nn.Module):
-    def __init__(self, emb, l1, l2):
-        super(SentAL, self).__init__()
-        self.embedding = emb
-        self.layer_1 = l1
-        self.layer_2 = l2
-    def forward(self, x, y):
-        emb_x, emb_y, = self.embedding(x, y)
-        # print(self.embedding._t_prime.shape, self.embedding.y.shape)
-        emb_loss = self.embedding.loss()
+
+class sentimentLSTM(nn.Module):
+    """
+    The RNN model that will be used to perform Sentiment analysis.
+    """
+    
+    def __init__(self, vocab_size, output_size, embedding_dim, hidden_dim, n_layers, drop_prob=0.5):
+        """
+        Initialize the model by setting up the layers.
+        """
+        super().__init__()
         
-        layer_1_x, h1, layer_1_y = self.layer_1(emb_x, emb_y)
-        layer_1_loss = self.layer_1.loss()
+        self.output_size = output_size
+        self.hidden_dim = hidden_dim
+        self.n_layers = n_layers
         
-        print('model h1',h1.shape)
-        h,c = h1
-        # print('old', h.shape, c.shape)
-        h = h.reshape(h.size(0), h.size(1), 2, -1)
-        h = h.sum(2)
-        c = c.reshape(c.size(0), c.size(1), 2, -1)
-        c = c.sum(2)
-        h1 = (h,c)
+        # Embedding and LSTM layers
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.lstm = nn.LSTM(embedding_dim, hidden_dim, n_layers, dropout=drop_prob, batch_first=True, bidirectional=True)
         
-        # print(layer_1_x.shape)
-        layer_2_x, h2, layer_2_y = self.layer_2(layer_1_x, layer_1_y, h1)
-        layer_2_loss = self.layer_2.loss()
+        # Dropout layer
+        self.dropout = nn.Dropout(0.3)
+        
+        # Linear and sigmoid layers
+        self.fc = nn.Sequential(
+            nn.Linear(hidden_dim*4, 400),
+            nn.ReLU(),
+            nn.Linear(400, 1)
+        )
+        
+        self.sigmoid = nn.Sigmoid()
+        
+    def forward(self, x, hidden):
+        """
+        Perform a forward pass of our model on some input and hidden state.
+        """
+        batch_size = x.size(0)
+        
+        #embedding and lstm_out
+        embeds = self.embedding(x)
+        lstm_out, hidden = self.lstm(embeds, hidden)
+        
+        #stack up lstm outputs
+        lstm_out = lstm_out.contiguous().view(-1, self.hidden_dim*4)
+        
+        # Dropout and fully connected layer
+        out = self.dropout(lstm_out)
+        out = self.fc(out)
+        
+        #sigmoid function
+        sig_out = self.sigmoid(out)
+        
+        # reshape to be batch size first
+        sig_out = sig_out.view(batch_size, -1)
+        sig_out = sig_out[:, -1] # get last batch of labels
+        
+        return sig_out, hidden
+    
+    def init_hidden(self, batch_size):
+        ''' Initializes hidden state '''
+        # Create two new tensors with sizes n_layers x batch_size x hidden_dim,
+        # initialized to zero, for hidden state and cell state of LSTM
+        h0 = torch.zeros((4,batch_size,self.hidden_dim)).to(device)
+        c0 = torch.zeros((4,batch_size,self.hidden_dim)).to(device)
+        hidden = (h0,c0)
+        return hidden
 
-        return emb_loss, layer_1_loss, layer_2_loss
 
+# In[26]:
 
-
-
-torch.cuda.empty_cache()
 
 is_cuda = torch.cuda.is_available()
 
@@ -187,32 +223,30 @@ else:
     device = torch.device("cpu")
     print("GPU not available, CPU used")
 
-device = 'cpu'
-
 # Instantiate the model w/ hyperparams
-vocab_size = len(vocab_to_int)+1
+vocab_size = len(vocab_to_int) + 1
 output_size = 1
 embedding_dim = 300
-hidden_dim = 400
+hidden_dim = 550
 n_layers = 2
 
-emb = EmbeddingAL((vocab_size, 2), (300, 128))
-l1 = LSTMAL(300, 128, (128,128), dropout=0.2, bidirectional=True)
-l2 = LSTMAL(256, 128, (64, 64), dropout=0.2, bidirectional=True)
-
-model = SentAL(emb, l1, l2)
+model = sentimentLSTM(vocab_size, output_size, embedding_dim, hidden_dim, n_layers)
 model = model.to(device)
-print('model param', get_n_params(model))
+
+print('param num', get_n_params(model))
+raise Exception()
+
+# ## Training Loop
+
+# In[27]:
 
 
 lr=0.001
 
 criterion = nn.BCELoss()
 
-# optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-optimizer_1 = torch.optim.Adam(model.embedding.parameters(), lr=1e-4)
-optimizer_2 = torch.optim.Adam(model.layer_1.parameters(), lr=1e-4)
-optimizer_3 = torch.optim.Adam(model.layer_2.parameters(), lr=1e-4)
+optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
 # function to predict accuracy
 def acc(pred,label):
     pred = torch.round(pred.squeeze())
@@ -220,117 +254,72 @@ def acc(pred,label):
 
 clip = 5
 epochs = 10
-valid_acc_min = np.Inf
+valid_loss_min = np.Inf
 # train for some number of epochs
 epoch_tr_loss,epoch_vl_loss = [],[]
 epoch_tr_acc,epoch_vl_acc = [],[]
 
 for epoch in range(epochs):
     train_losses = []
-
-    total_emb_loss = []
-    total_l1_loss = []
-    total_l2_loss = []
-
-    total_acc = 0.0
-    total_count = 0
-    model.embedding.train()
-    model.layer_1.train()
-    model.layer_2.train()
-    model.embedding.training=True
-    model.layer_1.training=True
-    model.layer_2.training=True
-
+    train_acc = 0.0
+    model.train()
     # initialize hidden state 
+    h = model.init_hidden(batch_size)
     for inputs, labels in train_loader:
-        model.train()
-        # purint('one batch') 
-        # print(labels.shape)
-
+        
         inputs, labels = inputs.to(device), labels.to(device)   
+        # Creating new variables for the hidden state, otherwise
+        # we'd backprop through the entire training history
+        h = tuple([each.data for each in h])
         
         model.zero_grad()
-        emb_loss, l1_loss, l2_loss = model(inputs,labels)
+        output,h = model(inputs,h)
         
-        nn.utils.clip_grad_norm_(model.parameters(), clip)
-
-        total_emb_loss.append(emb_loss.item())
-        total_l1_loss.append(l1_loss.item())
-        total_l2_loss.append(l2_loss.item())
-
-        emb_loss.backward()
-        l1_loss.backward()
-        l2_loss.backward()
-
-        optimizer_1.step()
-        optimizer_2.step()
-        optimizer_3.step()
-
-        torch.cuda.empty_cache()
-
         # calculate the loss and perform backprop
-        with torch.no_grad():
-            
-            model.eval()
-
-            left  =  model.embedding.f(inputs)
-            output, (left, c) = model.layer_1.f(left)
-            output, (left, c) = model.layer_2.f(left)
-            right = model.layer_2.bx(left)
-            right = model.layer_2.dy(right)
-            right = model.layer_1.dy(right)
-            predicted_label = model.embedding.dy(right)
-            
-            
-
-            total_acc += (predicted_label.argmax(1) == labels).sum().item()
-
-            # total_acc += (predicted_label.argmax(1) == labels).sum().item()
-            total_count += labels.size(0)
-
+        loss = criterion(output.squeeze(), labels.float())
+        loss.backward()
+        train_losses.append(loss.item())
+        # calculating accuracy
+        accuracy = acc(output,labels)
+        train_acc += accuracy
         #`clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         nn.utils.clip_grad_norm_(model.parameters(), clip)
+        optimizer.step()
  
     
+        
+    val_h = model.init_hidden(batch_size)
     val_losses = []
     val_acc = 0.0
-    val_count = 0
-
-    model.embedding.eval()
-    model.layer_1.eval()
-    model.layer_2.eval()
-
+    model.eval()
     for inputs, labels in valid_loader:
-        with torch.no_grad():
-            model.embedding.eval()
-            model.layer_1.eval()
-            model.layer_2.eval()
+        val_h = tuple([each.data for each in val_h])
 
-            inputs, labels = inputs.to(device), labels.to(device)
+        inputs, labels = inputs.to(device), labels.to(device)
 
-            left = model.embedding.f(inputs)
-            left, _ = model.layer_1.f(left)
-            left, _ = model.layer_2.f(left)
-            right = model.layer_2.bx(left)
-            right = model.layer_2.dy(right)
-            right = model.layer_1.dy(right)
-            predicted_label = model.embedding.dy(right)
+        output, val_h = model(inputs, val_h)
+        val_loss = criterion(output.squeeze(), labels.float())
 
-            # total_acc += (predicted_label.argmax(1) == labels).sum().item()
-            val_acc += (predicted_label.argmax(1) == labels).sum().item()
-            val_count += labels.size(0)
+        val_losses.append(val_loss.item())
             
-    epoch_train_loss = [np.mean(total_emb_loss), np.mean(total_l1_loss), np.mean(total_l2_loss)]
-    epoch_train_acc = total_acc/total_count
-    epoch_val_acc = val_acc/val_count
-
+        accuracy = acc(output,labels)
+        val_acc += accuracy
+            
+    epoch_train_loss = np.mean(train_losses)
+    epoch_val_loss = np.mean(val_losses)
+    epoch_train_acc = train_acc/len(train_loader.dataset)
+    epoch_val_acc = val_acc/len(valid_loader.dataset)
+    epoch_tr_loss.append(epoch_train_loss)
+    epoch_vl_loss.append(epoch_val_loss)
+    epoch_tr_acc.append(epoch_train_acc)
+    epoch_vl_acc.append(epoch_val_acc)
     print(f'Epoch {epoch+1}') 
-    print(f'train_loss : {epoch_train_loss}')
+    print(f'train_loss : {epoch_train_loss} val_loss : {epoch_val_loss}')
     print(f'train_accuracy : {epoch_train_acc*100} val_accuracy : {epoch_val_acc*100}')
-    if epoch_val_acc <= valid_acc_min:
-        torch.save(model.state_dict(), 'al.state_dict.pt')
-        print('Validation loss decreased ({:.6f} --> {:.6f}).  Saving model ...'.format(valid_acc_min,epoch_val_acc))
-        valid_acc_min = epoch_val_acc
+    if epoch_val_loss <= valid_loss_min:
+        torch.save(model.state_dict(), 'state_dict.pt')
+        print('Validation loss decreased ({:.6f} --> {:.6f}).  Saving model ...'.format(valid_loss_min,epoch_val_loss))
+        valid_loss_min = epoch_val_loss
     print(25*'==')
 
 
