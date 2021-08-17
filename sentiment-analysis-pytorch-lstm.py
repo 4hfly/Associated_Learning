@@ -182,7 +182,7 @@ class sentimentLSTM(nn.Module):
         
         #embedding and lstm_out
         embeds = self.embedding(x)
-        lstm_out, hidden = self.lstm(embeds, hidden)
+        lstm_out, hidden = self.lstm(embeds)
         
         #stack up lstm outputs
         lstm_out = lstm_out.contiguous().view(-1, self.hidden_dim*4)
@@ -226,15 +226,15 @@ else:
 # Instantiate the model w/ hyperparams
 vocab_size = len(vocab_to_int) + 1
 output_size = 1
-embedding_dim = 300
-hidden_dim = 550
+embedding_dim = 220
+hidden_dim = 300
 n_layers = 2
 
 model = sentimentLSTM(vocab_size, output_size, embedding_dim, hidden_dim, n_layers)
 model = model.to(device)
 
 print('param num', get_n_params(model))
-raise Exception()
+# raise Exception()
 
 # ## Training Loop
 

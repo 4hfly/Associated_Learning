@@ -149,24 +149,24 @@ class SentAL(nn.Module):
         self.embedding = emb
         self.layer_1 = l1
         self.layer_2 = l2
+        self.dropout = nn.Dropout(0.1)
     def forward(self, x, y):
         emb_x, emb_y, = self.embedding(x, y)
+        emb_x, emb_y = self.dropout(emb_x), self.dropout(emb_y)
         # print(self.embedding._t_prime.shape, self.embedding.y.shape)
-        emb_loss = self.embedding.loss()
-        
-        layer_1_x, h1, layer_1_y = self.layer_1(emb_x, emb_y)
+        emb_loss = self.embedding.loss() 
+
+        layer_1_x, h1 , layer_1_y = self.layer_1(emb_x, emb_y)
+        layer_1_x, layer_1_y = self.dropout(layer_1_x), self.dropout(layer_1_y)
         layer_1_loss = self.layer_1.loss()
-        
-        print('model h1',h1.shape)
+         
         h,c = h1
-        # print('old', h.shape, c.shape)
-        h = h.reshape(h.size(0), h.size(1), 2, -1)
-        h = h.sum(2)
-        c = c.reshape(c.size(0), c.size(1), 2, -1)
-        c = c.sum(2)
+        h = h
+        c = c
+        # print(h.shape, c.shape)
+        h = h.reshape(2, h.size(0), -1)
         h1 = (h,c)
         
-        # print(layer_1_x.shape)
         layer_2_x, h2, layer_2_y = self.layer_2(layer_1_x, layer_1_y, h1)
         layer_2_loss = self.layer_2.loss()
 
@@ -187,7 +187,7 @@ else:
     device = torch.device("cpu")
     print("GPU not available, CPU used")
 
-device = 'cpu'
+# device = 'cpu'
 
 # Instantiate the model w/ hyperparams
 vocab_size = len(vocab_to_int)+1
@@ -197,22 +197,22 @@ hidden_dim = 400
 n_layers = 2
 
 emb = EmbeddingAL((vocab_size, 2), (300, 128))
-l1 = LSTMAL(300, 128, (128,128), dropout=0.2, bidirectional=True)
-l2 = LSTMAL(256, 128, (64, 64), dropout=0.2, bidirectional=True)
+l1 = LSTMAL(300, 128, (128,128), dropout=0, bidirectional=True)
+l2 = LSTMAL(256, 128, (128,128), dropout=0, bidirectional=True)
 
 model = SentAL(emb, l1, l2)
 model = model.to(device)
 print('model param', get_n_params(model))
-
+# raise Exception('ok')
 
 lr=0.001
 
 criterion = nn.BCELoss()
 
-# optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-optimizer_1 = torch.optim.Adam(model.embedding.parameters(), lr=1e-4)
-optimizer_2 = torch.optim.Adam(model.layer_1.parameters(), lr=1e-4)
-optimizer_3 = torch.optim.Adam(model.layer_2.parameters(), lr=1e-4)
+optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+# optimizer_1 = torch.optim.Adam(model.embedding.parameters(), lr=1e-4)
+# optimizer_2 = torch.optim.Adam(model.layer_1.parameters(), lr=1e-4)
+# optimizer_3 = torch.optim.Adam(model.layer_2.parameters(), lr=1e-4)
 # function to predict accuracy
 def acc(pred,label):
     pred = torch.round(pred.squeeze())
@@ -249,22 +249,26 @@ for epoch in range(epochs):
 
         inputs, labels = inputs.to(device), labels.to(device)   
         
-        model.zero_grad()
+        # model.zero_grad()
+        optimizer.zero_grad()
+
         emb_loss, l1_loss, l2_loss = model(inputs,labels)
         
-        nn.utils.clip_grad_norm_(model.parameters(), clip)
+        nn.utils.clip_grad_norm_(model.layer_1.parameters(), clip)
+        nn.utils.clip_grad_norm_(model.layer_2.parameters(), clip)
+        
+        loss = emb_loss + l1_loss + l2_loss
+        loss.backward()
+        # optimizer.step()
 
         total_emb_loss.append(emb_loss.item())
         total_l1_loss.append(l1_loss.item())
         total_l2_loss.append(l2_loss.item())
 
-        emb_loss.backward()
-        l1_loss.backward()
-        l2_loss.backward()
-
-        optimizer_1.step()
-        optimizer_2.step()
-        optimizer_3.step()
+        optimizer.step()
+        # optimizer_1.step()
+        # optimizer_2.step()
+        # optimizer_3.step()
 
         torch.cuda.empty_cache()
 
@@ -274,22 +278,22 @@ for epoch in range(epochs):
             model.eval()
 
             left  =  model.embedding.f(inputs)
-            output, (left, c) = model.layer_1.f(left)
-            output, (left, c) = model.layer_2.f(left)
+            output, hidden = model.layer_1.f(left)
+            # output, (left, c) = model.layer_2.f(output, hidden)
+            left, (output, c) = model.layer_2.f(output, hidden)
+            left = left[:,-1,:]
+            # left = left.reshape(left.size(1), -1)
+
             right = model.layer_2.bx(left)
             right = model.layer_2.dy(right)
             right = model.layer_1.dy(right)
-            predicted_label = model.embedding.dy(right)
-            
-            
-
-            total_acc += (predicted_label.argmax(1) == labels).sum().item()
-
-            # total_acc += (predicted_label.argmax(1) == labels).sum().item()
+            predicted_label = torch.round(model.embedding.dy(right).squeeze())
+            total_acc += (predicted_label == labels.to(torch.float)).sum().item()
             total_count += labels.size(0)
 
-        #`clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
-        nn.utils.clip_grad_norm_(model.parameters(), clip)
+        # clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
+        nn.utils.clip_grad_norm_(model.layer_1.parameters(), clip)
+        nn.utils.clip_grad_norm_(model.layer_2.parameters(), clip)
  
     
     val_losses = []
@@ -309,15 +313,16 @@ for epoch in range(epochs):
             inputs, labels = inputs.to(device), labels.to(device)
 
             left = model.embedding.f(inputs)
-            left, _ = model.layer_1.f(left)
-            left, _ = model.layer_2.f(left)
+            output, hidden = model.layer_1.f(left)
+
+            left, (output, c) = model.layer_2.f(output, hidden)
+            left = left[:,-1,:]
+            
             right = model.layer_2.bx(left)
             right = model.layer_2.dy(right)
             right = model.layer_1.dy(right)
-            predicted_label = model.embedding.dy(right)
-
-            # total_acc += (predicted_label.argmax(1) == labels).sum().item()
-            val_acc += (predicted_label.argmax(1) == labels).sum().item()
+            predicted_label = torch.round(model.embedding.dy(right).squeeze())
+            val_acc += (predicted_label == labels.to(torch.float)).sum().item()
             val_count += labels.size(0)
             
     epoch_train_loss = [np.mean(total_emb_loss), np.mean(total_l1_loss), np.mean(total_l2_loss)]
@@ -327,57 +332,49 @@ for epoch in range(epochs):
     print(f'Epoch {epoch+1}') 
     print(f'train_loss : {epoch_train_loss}')
     print(f'train_accuracy : {epoch_train_acc*100} val_accuracy : {epoch_val_acc*100}')
-    if epoch_val_acc <= valid_acc_min:
+    if epoch_val_acc >= valid_acc_min:
         torch.save(model.state_dict(), 'al.state_dict.pt')
-        print('Validation loss decreased ({:.6f} --> {:.6f}).  Saving model ...'.format(valid_acc_min,epoch_val_acc))
+        print('Validation acc increased ({:.6f} --> {:.6f}).  Saving model ...'.format(valid_acc_min,epoch_val_acc))
         valid_acc_min = epoch_val_acc
     print(25*'==')
-
-
-# ## 16) Testing
-
-# In[ ]:
-
-
-# Get test data loss and accuracy
 
 test_losses = [] # track loss
 num_correct = 0
 
-# init hidden state
-test_h = model.init_hidden(batch_size)
-
 model.eval()
-# iterate over test data
+model.load_state_dict(torch.load('al.state_dict.pt'))
+model = model.to(device)
+
+test_acc = 0
+test_count = 0
+
 for inputs, labels in test_loader:
+    with torch.no_grad():
+        model.embedding.eval()
+        model.layer_1.eval()
+        model.layer_2.eval()
 
-    # Creating new variables for the hidden state, otherwise
-    # we'd backprop through the entire training history
-    test_h = tuple([each.data for each in test_h])
+        inputs, labels = inputs.to(device), labels.to(device)
 
-    inputs, labels = inputs.to(device), labels.to(device)
-    
-    output, test_h = model(inputs, test_h)
-    
-    # calculate loss
-    test_loss = criterion(output.squeeze(), labels.float())
-    test_losses.append(test_loss.item())
-    
-    # convert output probabilities to predicted class (0 or 1)
-    pred = torch.round(output.squeeze())  # rounds to the nearest integer
-    
-    # compare predictions to true label
-    correct_tensor = pred.eq(labels.float().view_as(pred))
-    correct = np.squeeze(correct_tensor.cpu().numpy())
-    num_correct += np.sum(correct)
+        left = model.embedding.f(inputs)
+        output, hidden = model.layer_1.f(left)
+        output, (left, c) = model.layer_2.f(output, hidden)
 
+        left = left.reshape(left.size(1), -1)
+        right = model.layer_2.bx(left)
+        right = model.layer_2.dy(right)
+        right = model.layer_1.dy(right)
+        predicted_label = torch.round(model.embedding.dy(right).squeeze())
+        test_acc += (predicted_label == labels.to(torch.float)).sum().item()
+        test_count += labels.size(0)
+print('Test acc', test_acc/test_count)
 
 # -- stats! -- ##
 # avg test loss
-print("Test loss: {:.3f}".format(np.mean(test_losses)))
+# print("Test loss: {:.3f}".format(np.mean(test_losses)))
 
 # accuracy over all test data
-test_acc = num_correct/len(test_loader.dataset)
+test_acc = test_acc/test_count
 print("Test accuracy: {:.3f}".format(test_acc))
 
 

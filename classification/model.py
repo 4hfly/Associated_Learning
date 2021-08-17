@@ -4,6 +4,7 @@ from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
 from torch import Tensor
+import torch.nn.functional as F
 # from torchtext.vocab import Vectors
 
 CONFIG = {
@@ -76,9 +77,9 @@ class ALComponent(nn.Module):
         self.g = g
         # birdge function
         self.bx = bx
-        self.by = by
+        # self.by = by
         # decoder h function
-        self.dx = dx
+        # self.dx = dx
         self.dy = dy
         # loss function for bridge and auto-encoder
         self.criterion_br = cb
@@ -91,11 +92,11 @@ class ALComponent(nn.Module):
 
         self.x = x
         self.y = y
-
+        # print('x',self.x.shape, 'y', self.y.shape)
         if self.training:
 
             self._s = self.f(x)
-            self._s_prime = self.dx(self._s)
+            # self._s_prime = self.dx(self._s)
             self._t = self.g(y)
             self._t_prime = self.dy(self._t)
             return self._s.detach(), self._t.detach()
@@ -104,7 +105,7 @@ class ALComponent(nn.Module):
 
             if not self.reverse:
                 self._s = self.f(x)
-                self._t_prime = self.dy(self.bx(self._s))
+                # self._t_prime = self.dy(self.bx(self._s))
                 return self._s.detach(), self._t_prime.detach()
             else:
                 self._t = self.g(x)
@@ -152,15 +153,18 @@ class EmbeddingAL(ALComponent):
             nn.Linear(embedding_dim[0], embedding_dim[1]),
             nn.Sigmoid()
         )
-        by = nn.Sequential(
-            nn.Linear(embedding_dim[1], embedding_dim[0]),
-            nn.Sigmoid()
-        )
+
+        by = None
+        dx = None
+        # by = nn.Sequential(
+        #     nn.Linear(embedding_dim[1], embedding_dim[0]),
+        #     nn.Sigmoid()
+        # )
         # h function
-        dx = nn.Sequential(
-            nn.Linear(embedding_dim[0], num_embeddings[0]),
-            nn.Sigmoid()
-        )
+        # dx = nn.Sequential(
+        #     nn.Linear(embedding_dim[0], num_embeddings[0]),
+        #     nn.Sigmoid()
+        # )
 
         output_dim = 1
         dy = nn.Sequential(
@@ -169,7 +173,8 @@ class EmbeddingAL(ALComponent):
         )
         # loss function
         cb = nn.MSELoss(reduction='sum')
-        ca = nn.BCEWithLogitsLoss()
+        # ca = nn.MSELoss(reduction='sum')
+        ca = nn.BCEWithLogitsLoss(reduction='sum')
 
         super(EmbeddingAL, self).__init__(
             f, g, bx, by, dx, dy, cb, ca, reverse=reverse)
@@ -181,9 +186,10 @@ class EmbeddingAL(ALComponent):
         p_nonzero = (p != 0.).sum(dim=1)
         p = p.sum(dim=1) / p_nonzero
 
+        # print(self._t_prime.shape)
+
         if not self.reverse:
-            # print(self.bx(p).shape)
-            loss_b = self.criterion_br(self.bx(p), q)
+            loss_b = self.criterion_br(self.bx(p), torch.sigmoid(q))
             loss_d = self.criterion_ae(
                 self._t_prime.squeeze(1), self.y.to(torch.float))
         else:
@@ -192,6 +198,7 @@ class EmbeddingAL(ALComponent):
                 self._s_prime.squeeze(1), self.x.to(torch.float))
 
         return loss_b + loss_d
+
 
 class LinearAL(ALComponent):
     """
@@ -234,7 +241,7 @@ class LinearAL(ALComponent):
         super(LinearAL, self).__init__(
             f, g, bx, by, dx, dy, cb, ca, reverse=reverse)
 
-            
+
 class LSTMAL(ALComponent):
     """
     For classification.
@@ -257,9 +264,9 @@ class LSTMAL(ALComponent):
     ) -> None:
 
         if bidirectional:
-            d = 2
+            self.d = 2
         else:
-            d = 1
+            self.d = 1
 
         f = nn.LSTM(
             input_size,
@@ -270,26 +277,31 @@ class LSTMAL(ALComponent):
             dropout=dropout,
             bidirectional=bidirectional
         )
-        g = nn.Linear(output_size, hidden_size[1])
+        g = nn.Sequential(
+            nn.Linear(output_size, hidden_size[1]),
+            nn.Sigmoid()
+        )
         # bridge function
         bx = nn.Sequential(
-            nn.Linear(hidden_size[0] * d, hidden_size[1]),
+            nn.Linear(hidden_size[0] * self.d, hidden_size[1]),
             nn.Sigmoid()
         )
-        by = nn.Sequential(
-            nn.Linear(hidden_size[1], hidden_size[0] * d),
-            nn.Sigmoid()
-        )
+        by = None
+        dx = None
+        # by = nn.Sequential(
+        #     nn.Linear(hidden_size[1], hidden_size[0] * self.d),
+        #     nn.Sigmoid()
+        # )
         # h function
         # NOTE: dx
-        dx = nn.LSTM(hidden_size[0] * d, input_size)
+        # dx = nn.LSTM(hidden_size[0] * self.d, input_size)
         dy = nn.Sequential(
             nn.Linear(hidden_size[1], output_size),
             nn.Sigmoid()
         )
         # loss function
-        cb = nn.MSELoss()
-        ca = nn.MSELoss()
+        cb = nn.MSELoss(reduction='sum')
+        ca = nn.MSELoss(reduction='sum')
 
         super(LSTMAL, self).__init__(
             f, g, bx, by, dx, dy, cb, ca, reverse=reverse)
@@ -317,12 +329,12 @@ class LSTMAL(ALComponent):
 
         self.x = x
         self.y = y
-
+        # print('lstm x', x.shape, 'y', y.shape)
         if self.training:
 
             self._s, (self._h_nx, c_nx) = self.f(x, hx)
             self._h_nx = self._h_nx.reshape(self._h_nx.size(1), -1)
-            print('hx', self._h_nx.shape)
+            # print('hx', self._h_nx.shape)
 
             # self._s_prime = self.dx(self._h_nx)
             self._t = self.g(y)
@@ -333,16 +345,22 @@ class LSTMAL(ALComponent):
 
             if not self.reverse:
                 self._s, (self._h_nx, c_nx) = self.f(x, hx)
-                self._t_prime = self.dy(self.bx(self._s))
+                self._h_nx = self._h_nx.view(
+                    1, -1, self._h_nx.size(2) * self.d)
+                self._t_prime = self.dy(self.bx(self._h_nx))
                 return self._s.detach(), (self._h_nx.detach(), c_nx.detach()), self._t_prime.detach()
             else:
                 raise Exception()
 
     def loss(self):
 
-        p = self._h_nx
-        print('p', p.shape)
+        # p = self._h_nx
+        p = self._s[:,-1,:]
+        # print('p', p.shape)
         q = self._t
+        q = self._t
+        # p = p.view(1, -1, p.size(2) * self.d)
+        # print(p.shape)
 
         if not self.reverse:
             loss_b = self.criterion_br(self.bx(p), q)
