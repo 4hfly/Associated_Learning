@@ -9,12 +9,10 @@ import torch.nn.functional as F
 # from torchtext.vocab import Vectors
 
 CONFIG = {
-    "loss_function": "MSE",
-    "decoder": "attn",
-    "hidden_size": 128,
+    "hidden_size": (128, 128),
     "num_layers": 1,
-    "bias": True,
-    "batch_first": False,
+    "bias": False,
+    "batch_first": True,
     "dropout": 0.,
     "bidirectional": True,
     "vocab_size": (25000, 25000),
