@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import json
 from typing import List, Optional, Tuple
 
 import torch
@@ -8,12 +9,10 @@ import torch.nn.functional as F
 # from torchtext.vocab import Vectors
 
 CONFIG = {
-    "loss_function": "MSE",
-    "decoder": "attn",
-    "hidden_size": 128,
+    "hidden_size": (128, 128),
     "num_layers": 1,
-    "bias": True,
-    "batch_first": False,
+    "bias": False,
+    "batch_first": True,
     "dropout": 0.,
     "bidirectional": True,
     "vocab_size": (25000, 25000),
@@ -355,7 +354,7 @@ class LSTMAL(ALComponent):
     def loss(self):
 
         # p = self._h_nx
-        p = self._s[:,-1,:]
+        p = self._s[:, -1, :]
         # print('p', p.shape)
         q = self._t
         q = self._t
@@ -369,3 +368,20 @@ class LSTMAL(ALComponent):
             raise Exception()
 
         return loss_b + loss_d
+
+
+def load_parameters():
+
+    global CONFIG
+    with open("configs/hyperparams.json", "r", encoding="utf8") as f:
+        CONFIG = json.load(f)
+
+
+def save_parameters():
+
+    with open("configs/hyperparameters.json", "w", encoding="utf8") as f:
+        json.dump(CONFIG, f, ensure_ascii=False, sort_keys=True, indent=3)
+
+
+if __name__ == "__main__":
+    save_parameters()
