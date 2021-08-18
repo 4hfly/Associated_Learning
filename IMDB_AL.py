@@ -219,8 +219,8 @@ def acc(pred,label):
     return torch.sum(pred == label.squeeze()).item()
 
 clip = 5
-epochs = 10
-valid_acc_min = np.Inf
+epochs = 5
+valid_acc_min = 0
 # train for some number of epochs
 epoch_tr_loss,epoch_vl_loss = [],[]
 epoch_tr_acc,epoch_vl_acc = [],[]
@@ -358,15 +358,17 @@ for inputs, labels in test_loader:
 
         left = model.embedding.f(inputs)
         output, hidden = model.layer_1.f(left)
-        output, (left, c) = model.layer_2.f(output, hidden)
-
-        left = left.reshape(left.size(1), -1)
+        left, (output, c) = model.layer_2.f(output, hidden)
+        left = left[:,-1,:]
+        # left = left.reshape(left.size(1), -1)
         right = model.layer_2.bx(left)
         right = model.layer_2.dy(right)
         right = model.layer_1.dy(right)
         predicted_label = torch.round(model.embedding.dy(right).squeeze())
         test_acc += (predicted_label == labels.to(torch.float)).sum().item()
         test_count += labels.size(0)
+
+print('valid acc', valid_acc_min)
 print('Test acc', test_acc/test_count)
 
 # -- stats! -- ##
