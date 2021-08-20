@@ -149,8 +149,8 @@ class EmbeddingAL(ALComponent):
             num_embeddings[1], embedding_dim[1], padding_idx=padding_idx)
         # bridge function
         bx = nn.Sequential(
-            nn.Linear(embedding_dim[0], embedding_dim[1]),
-            nn.Sigmoid()
+            nn.Linear(embedding_dim[0], embedding_dim[1], bias=False),
+            nn.ELU()
         )
 
         by = None
@@ -164,16 +164,19 @@ class EmbeddingAL(ALComponent):
         #     nn.Linear(embedding_dim[0], num_embeddings[0]),
         #     nn.Sigmoid()
         # )
+        if num_embeddings[1] ==2:
+            self.output_dim=1
+        else:
+            self.output_dim = num_embeddings[1]
 
-        output_dim = 1
         dy = nn.Sequential(
-            nn.Linear(embedding_dim[1], output_dim),
-            nn.Sigmoid()
+            nn.Linear(embedding_dim[1], self.output_dim, bias=False),
+            nn.ELU()
         )
         # loss function
-        cb = nn.MSELoss(reduction='sum')
-        # ca = nn.MSELoss(reduction='sum')
-        ca = nn.BCEWithLogitsLoss(reduction='sum')
+        cb = nn.MSELoss(reduction='mean')
+        ca = nn.MSELoss(reduction='mean')
+        # ca = nn.BCEWithLogitsLoss(reduction='sum')
 
         super(EmbeddingAL, self).__init__(
             f, g, bx, by, dx, dy, cb, ca, reverse=reverse)
@@ -182,15 +185,20 @@ class EmbeddingAL(ALComponent):
 
         p = self._s
         q = self._t
+        # print(p.shape, q.shape)
         p_nonzero = (p != 0.).sum(dim=1)
         p = p.sum(dim=1) / p_nonzero
-
+        # print(p.shape, q.shape, self.y.shape, self._t_prime.shape)
         # print(self._t_prime.shape)
 
         if not self.reverse:
-            loss_b = self.criterion_br(self.bx(p), torch.sigmoid(q))
-            loss_d = self.criterion_ae(
-                self._t_prime.squeeze(1), self.y.to(torch.float))
+            loss_b = self.criterion_br(self.bx(p), q)
+            if self.output_dim==1:
+                loss_d = self.criterion_ae(
+                    self._t_prime.squeeze(1), self.y.to(torch.float))
+            else:
+                print('this loss')
+                loss_d = self.criterion_ae(self._t_prime, self.y.to(torch.float))
         else:
             loss_b = self.criterion_br(self.by(q), p)
             loss_d = self.criterion_ae(
@@ -209,7 +217,7 @@ class LinearAL(ALComponent):
         in_features: int,
         out_features: int,
         hidden_size: Tuple[int, int],
-        bias: bool = True,
+        bias: bool = False,
         reverse: bool = False
     ) -> None:
 
@@ -277,13 +285,13 @@ class LSTMAL(ALComponent):
             bidirectional=bidirectional
         )
         g = nn.Sequential(
-            nn.Linear(output_size, hidden_size[1]),
-            nn.Sigmoid()
+            nn.Linear(output_size, hidden_size[1], bias=False),
+            nn.ELU()
         )
         # bridge function
         bx = nn.Sequential(
-            nn.Linear(hidden_size[0] * self.d, hidden_size[1]),
-            nn.Sigmoid()
+            nn.Linear(hidden_size[0] * self.d, hidden_size[1], bias=False),
+            nn.ELU()
         )
         by = None
         dx = None
@@ -295,12 +303,12 @@ class LSTMAL(ALComponent):
         # NOTE: dx
         # dx = nn.LSTM(hidden_size[0] * self.d, input_size)
         dy = nn.Sequential(
-            nn.Linear(hidden_size[1], output_size),
-            nn.Sigmoid()
+            nn.Linear(hidden_size[1], output_size, bias=False),
+            nn.ELU()
         )
         # loss function
-        cb = nn.MSELoss(reduction='sum')
-        ca = nn.MSELoss(reduction='sum')
+        cb = nn.MSELoss(reduction='mean')
+        ca = nn.MSELoss(reduction='mean')
 
         super(LSTMAL, self).__init__(
             f, g, bx, by, dx, dy, cb, ca, reverse=reverse)

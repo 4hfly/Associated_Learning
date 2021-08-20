@@ -23,7 +23,7 @@ import torch.nn as nn
 
 from classification.model import EmbeddingAL, LSTMAL
 
-
+import sys
 
 def get_n_params(model):
     pp = 0
@@ -33,9 +33,6 @@ def get_n_params(model):
             nn = nn*s
         pp += nn
     return pp
-
-
-
 
 df = pd.read_csv('IMDB_Dataset.csv')
 
@@ -55,15 +52,13 @@ count_words = Counter(corpus)
 sorted_words = count_words.most_common()
 
 
-
 vocab_to_int = {w:i+2 for i, (w,c) in enumerate(sorted_words[:29999])}
 
 vocab_to_int['pad'] = 0
 vocab_to_int['unk'] = 1
 
 
-print(max(list(vocab_to_int.values())))
-print(len(vocab_to_int))
+print('vocab size',len(vocab_to_int))
 
 reviews_int = []
 for text in df['cleaned_reviews']:
@@ -107,18 +102,10 @@ def Padding(review_int, seq_len):
     return features
 
 
-# In[12]:
-
-
 features = Padding(reviews_int, 200)
-
-
-
 
 X_train, X_remain, y_train, y_remain = train_test_split(features, df['sentiment'].to_numpy(), test_size=0.2, random_state=1)
 X_valid, X_test, y_valid, y_test = train_test_split(X_remain, y_remain, test_size=0.5, random_state=1)
-
-
 
 # create tensor dataset
 train_data = TensorDataset(torch.from_numpy(X_train), torch.from_numpy(y_train))
@@ -140,8 +127,7 @@ valid_loader = DataLoader(valid_data, shuffle=True, batch_size=batch_size)
 dataiter = iter(train_loader)
 sample_x, sample_y = dataiter.next()
 
-
-
+save_dir = sys.argv[1] + '.pt'
 
 class SentAL(nn.Module):
     def __init__(self, emb, l1, l2):
@@ -171,8 +157,6 @@ class SentAL(nn.Module):
         layer_2_loss = self.layer_2.loss()
 
         return emb_loss, layer_1_loss, layer_2_loss
-
-
 
 
 torch.cuda.empty_cache()
@@ -219,7 +203,7 @@ def acc(pred,label):
     return torch.sum(pred == label.squeeze()).item()
 
 clip = 5
-epochs = 5
+epochs = 10
 valid_acc_min = 0
 # train for some number of epochs
 epoch_tr_loss,epoch_vl_loss = [],[]
@@ -244,12 +228,9 @@ for epoch in range(epochs):
     # initialize hidden state 
     for inputs, labels in train_loader:
         model.train()
-        # purint('one batch') 
-        # print(labels.shape)
 
         inputs, labels = inputs.to(device), labels.to(device)   
         
-        # model.zero_grad()
         optimizer.zero_grad()
 
         emb_loss, l1_loss, l2_loss = model(inputs,labels)
@@ -259,16 +240,12 @@ for epoch in range(epochs):
         
         loss = emb_loss + l1_loss + l2_loss
         loss.backward()
-        # optimizer.step()
 
         total_emb_loss.append(emb_loss.item())
         total_l1_loss.append(l1_loss.item())
         total_l2_loss.append(l2_loss.item())
 
         optimizer.step()
-        # optimizer_1.step()
-        # optimizer_2.step()
-        # optimizer_3.step()
 
         torch.cuda.empty_cache()
 
@@ -333,7 +310,7 @@ for epoch in range(epochs):
     print(f'train_loss : {epoch_train_loss}')
     print(f'train_accuracy : {epoch_train_acc*100} val_accuracy : {epoch_val_acc*100}')
     if epoch_val_acc >= valid_acc_min:
-        torch.save(model.state_dict(), 'al.state_dict.pt')
+        torch.save(model.state_dict(), f'{save_dir}')
         print('Validation acc increased ({:.6f} --> {:.6f}).  Saving model ...'.format(valid_acc_min,epoch_val_acc))
         valid_acc_min = epoch_val_acc
     print(25*'==')
@@ -342,7 +319,7 @@ test_losses = [] # track loss
 num_correct = 0
 
 model.eval()
-model.load_state_dict(torch.load('al.state_dict.pt'))
+model.load_state_dict(torch.load(f'{save_dir}'))
 model = model.to(device)
 
 test_acc = 0
@@ -378,12 +355,3 @@ print('Test acc', test_acc/test_count)
 # accuracy over all test data
 test_acc = test_acc/test_count
 print("Test accuracy: {:.3f}".format(test_acc))
-
-
-# ## Thank you 
-
-# In[ ]:
-
-
-
-
