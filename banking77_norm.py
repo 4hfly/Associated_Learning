@@ -27,7 +27,7 @@ parser = argparse.ArgumentParser('Banking77 Dataset for LSTM training')
 
 # model param
 parser.add_argument('--emb-dim', type=int, help='word embedding dimension', default=300)
-parser.add_argument('--hid-dim', type=int, help='lstm1 hidden dimension', default=300)
+parser.add_argument('--hid-dim', type=int, help='lstm1 hidden dimension', default=400)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 # training param

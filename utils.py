@@ -216,7 +216,6 @@ class ALTrainer:
                     else:
                         predicted_label = self.model.embedding.dy(right)
                         total_acc += (predicted_label.argmax(-1) == labels.to(torch.float).argmax(-1)).sum().item()
-
                     total_count += labels.size(0)
 
                 # clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
@@ -355,8 +354,8 @@ class Trainer:
                 loss = self.cri(output, labels)
                 loss.backward()
                 train_losses.append(loss.item())
-                accuracy = acc(output,labels)
-                train_acc += accuracy
+                # accuracy = acc(output,labels)
+                train_acc += (output.argmax(-1) == labels.float()).sum().item()
                 nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
                 self.opt.step()
         
@@ -369,8 +368,8 @@ class Trainer:
                     output, val_h = self.model(inputs)
                     val_loss = self.cri(output, labels)
                     val_losses.append(val_loss.item())
-                    accuracy = acc(output,labels)
-                    val_acc += accuracy
+                    # accuracy = acc(output,labels)
+                    val_acc += (output.argmax(-1) == labels.float()).sum().item()
 
             epoch_train_loss = np.mean(train_losses)
             epoch_val_loss = np.mean(val_losses)
@@ -405,13 +404,12 @@ class Trainer:
             # calculate loss
             test_loss = self.cri(output, labels)
             test_losses.append(test_loss.item())
-            pred = output.argmax(-1)  # rounds to the nearest integer
-
-            correct_tensor = pred.eq(labels.float().view_as(pred))
-            correct = np.squeeze(correct_tensor.cpu().numpy())
-            num_correct += np.sum(correct)
+            pred = output.argmax(-1)
+            # correct_tensor = pred.eq(labels.float().view_as(pred))
+            # correct = np.squeeze(correct_tensor.cpu().numpy())
+            num_correct += (pred == labels.float()).sum().item()
 
         print("Test loss: {:.3f}".format(np.mean(test_losses)))
 
-        test_acc = num_correct/len(self.est_loader.dataset)
+        test_acc = num_correct/len(self.test_loader.dataset)
         print("Test accuracy: {:.3f}".format(test_acc))
