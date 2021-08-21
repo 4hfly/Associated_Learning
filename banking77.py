@@ -21,14 +21,38 @@ from classification.model import EmbeddingAL, LSTMAL
 from utils import *
 import sys
 
+import argparse
+
+parser = argparse.ArgumentParser('Banking77 Dataset for AL training')
+
+# model param
+parser.add_argument('--word-emb', type=int, help='word embedding dimension', default=300)
+parser.add_argument('--label-emb', type=int, help='label embedding dimension', default=128)
+parser.add_argument('--l1-dim', type=int, help='lstm1 hidden dimension', default=300)
+parser.add_argument('--bridge-dim', type=int, help='bridge function dimension', default=300)
+parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
+
+# training param
+parser.add_argument('--lr', type=float, help='lr', default=0.001)
+parser.add_argument('--batch-size', type=int, help='batch-size', default=16)
+parser.add_argument('--one-hot-label', type=bool, help='if true then use one-hot vector as label input, else integer', default=True)
+parser.add_argument('--epoch', type=int, default=20)
+
+# dir param
+parser.add_argument('--save-dir', type=str, default='ckpt/banking77.al.pt')
+
+args = parser.parse_args()
+
+
+
 bank_train = load_dataset('banking77', split='train')
 bank_test = load_dataset('banking77', split='test')
 
 train_text = [b['text'] for b in bank_train]
-train_label = [b['label'] for b in bank_train]
+train_label = multi_class_process([b['label'] for b in bank_train], 77)
 
 test_text = [b['text'] for b in bank_test]
-test_label = [b['label'] for b in bank_test]
+test_label = multi_class_process([b['label'] for b in bank_test], 77)
 
 clean_train = [data_preprocessing(t) for t in train_text]
 clean_test = [data_preprocessing(t) for t in test_text]
@@ -44,15 +68,15 @@ print('max seq length',max_len)
 train_features = Padding(clean_train_id, max_len)
 test_features = Padding(clean_test_id, max_len)
 
-X_train, X_valid, y_train, y_valid = train_test_split(train_features, np.array(train_label), test_size=0.2, random_state=1)
-X_test, y_test = test_features, np.array(test_label)
-print(y_train.shape)
+print('train label num', len(train_label))
+X_train, X_valid, y_train, y_valid = train_test_split(train_features, train_label, test_size=0.2, random_state=1)
+X_test, y_test = test_features, test_label
 
-train_data = TensorDataset(torch.from_numpy(X_train), torch.from_numpy(y_train))
-test_data = TensorDataset(torch.from_numpy(X_test), torch.from_numpy(y_test))
-valid_data = TensorDataset(torch.from_numpy(X_valid), torch.from_numpy(y_valid))
+train_data = TensorDataset(torch.from_numpy(X_train), torch.stack(y_train))
+test_data = TensorDataset(torch.from_numpy(X_test), torch.stack(y_test))
+valid_data = TensorDataset(torch.from_numpy(X_valid), torch.stack(y_valid))
 
-batch_size = 16
+batch_size = args.batch_size
 
 train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
 test_loader = DataLoader(test_data, shuffle=False, batch_size=batch_size)
@@ -105,14 +129,12 @@ else:
     device = torch.device("cpu")
     print("GPU not available, CPU used")
 
-vocab_size = len(vocab)+1
-
-emb = EmbeddingAL((vocab_size, 77), (300, 300))
-l1 = LSTMAL(300, 300, (300,300), dropout=0, bidirectional=True)
-l2 = LSTMAL(600, 300, (300,300), dropout=0, bidirectional=True)
+emb = EmbeddingAL((args.vocab_size, 77), (args.bridge_dim, args.bridge_dim), lin=args.one_hot_label)
+l1 = LSTMAL(args.l1_dim, args.l1_dim, (args.bridge_dim, args.bridge_dim), dropout=0, bidirectional=True)
+l2 = LSTMAL(2*args.l1_dim, args.l1_dim, (args.bridge_dim, args.bridge_dim), dropout=0, bidirectional=True)
 model = SentAL(emb, l1, l2)
 model = model.to(device)
 print('AL banking77 model param num', get_n_params(model))
-T = ALTrainer(model, 0.001, train_loader=train_loader, valid_loader=valid_loader, test_loader=test_loader, save_dir = 'ckpt/banking77.al.pt')
-T.run(epoch=10)
+T = ALTrainer(model, args.lr, train_loader=train_loader, valid_loader=valid_loader, test_loader=test_loader, save_dir = args.save_dir)
+T.run(epoch=args.epoch)
 T.eval()

@@ -145,7 +145,7 @@ class SentAL(nn.Module):
         layer_1_x, h1 , layer_1_y = self.layer_1(emb_x, emb_y)
         layer_1_x, layer_1_y = self.dropout(layer_1_x), self.dropout(layer_1_y)
         layer_1_loss = self.layer_1.loss()
-         
+
         h,c = h1
         h = h
         c = c
@@ -203,7 +203,7 @@ def acc(pred,label):
     return torch.sum(pred == label.squeeze()).item()
 
 clip = 5
-epochs = 10
+epochs = 20
 valid_acc_min = 0
 # train for some number of epochs
 epoch_tr_loss,epoch_vl_loss = [],[]

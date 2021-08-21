@@ -10,6 +10,25 @@ import torch.nn as nn
 
 import numpy as np
 
+import torchnlp
+
+
+def get_word_vector(vocab, emb='glove'):
+    # vocab is a dictionary {word: word_id}
+    w = []
+    if emb =='glove':
+        vector = torchnlp.word_to_vector.Glove()
+    elif emb == 'FastText' or emb == 'fasttext':
+        vector = torchnlp.word_to_vector.FastText()
+
+    for word in vocab.keys():
+        try:
+            w.append(vector[word])
+        except:
+            w.append(torch.zeros(300))
+
+    return torch.stack(w, dim=0)
+
 def get_n_params(model):
     pp = 0
     for p in list(model.parameters()):
@@ -49,6 +68,16 @@ def create_vocab(corpus, vocab_size=30000):
     print('vocab size',len(vocab_to_int))
     return vocab_to_int
 
+def multi_class_process(labels, label_num):
+    '''
+    this function will convert multi-label lists into one-hot vector or n-hot vector
+    '''
+    hot_vecs = []
+    for l in labels:
+        b = torch.zeros(label_num)
+        b[l] = 1
+        hot_vecs.append(b)
+    return hot_vecs
 
 def multi_label_process(labels, label_num):
     '''
@@ -180,11 +209,11 @@ class ALTrainer:
                     if self.label_num == 2:
                         predicted_label = torch.round(self.model.embedding.dy(right).squeeze())
                         total_acc += (predicted_label == labels.to(torch.float)).sum().item()
+
                     else:
                         predicted_label = self.model.embedding.dy(right)
-                        print(predicted_label.shape)
-                        raise Exception
-                        total_acc += (predicted_label.argmax(-1) == labels.to(torch.float)).sum().item()
+                        total_acc += (predicted_label.argmax(-1) == labels.to(torch.float).argmax(-1)).sum().item()
+
                     total_count += labels.size(0)
 
                 # clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
@@ -222,7 +251,7 @@ class ALTrainer:
                         val_acc += (predicted_label == labels.to(torch.float)).sum().item()
                     else:
                         predicted_label = self.model.embedding.dy(right).squeeze()
-                        val_acc += (predicted_label.argmax(-1) == labels.to(torch.float)).sum().item()
+                        val_acc += (predicted_label.argmax(-1) == labels.to(torch.float).argmax(-1)).sum().item()
                     
                     val_count += labels.size(0)
                     
@@ -231,7 +260,7 @@ class ALTrainer:
             epoch_val_acc = val_acc/val_count
 
             print(f'Epoch {epoch+1}') 
-            print('train_loss : emb loss {:.4f}, layer1 loss {:.4f}, layer2 loss {:.4f}'.format(epoch_train_loss[0], epoch_train_loss[1], epoch_train_loss[2]))
+            print(f'train_loss : emb loss {epoch_train_loss[0]}, layer1 loss {epoch_train_loss[1]}, layer2 loss {epoch_train_loss[2]}')
             print(f'train_accuracy : {epoch_train_acc*100} val_accuracy : {epoch_val_acc*100}')
             if epoch_val_acc >= self.valid_acc_min:
                 torch.save(self.model.state_dict(), f'{self.save_dir}')
@@ -265,8 +294,13 @@ class ALTrainer:
                 right = model.layer_2.bx(left)
                 right = model.layer_2.dy(right)
                 right = model.layer_1.dy(right)
-                predicted_label = torch.round(model.embedding.dy(right).squeeze())
-                test_acc += (predicted_label == labels.to(torch.float)).sum().item()
+                if self.label_num == 2:
+                    predicted_label = torch.round(model.embedding.dy(right).squeeze())
+                    test_acc += (predicted_label == labels.to(torch.float)).sum().item()
+                else:
+                    predicted_label = model.embedding.dy(right).squeeze()
+                    test_acc += (predicted_label.argmax(-1) == labels.to(torch.float).argmax(-1)).sum().item()
+
                 test_count += labels.size(0)
 
         print('Test acc', test_acc/test_count)

@@ -134,7 +134,8 @@ class EmbeddingAL(ALComponent):
         embedding_dim: Tuple[int, int],
         pretrained: int = None,
         padding_idx: int = 0,
-        reverse: bool = False
+        reverse: bool = False,
+        lin: bool = False,
     ) -> None:
 
         if pretrained is not None:
@@ -143,10 +144,17 @@ class EmbeddingAL(ALComponent):
         else:
             f = nn.Embedding(
                 num_embeddings[0], embedding_dim[0], padding_idx=padding_idx)
-
+        self.lin = lin
+        print(self.lin)
         # TODO:
-        g = nn.Embedding(
-            num_embeddings[1], embedding_dim[1], padding_idx=padding_idx)
+        if self.lin:
+            g = nn.Sequential(
+                nn.Linear(num_embeddings[1], embedding_dim[1], bias=False),
+                nn.ELU()
+            )
+        else:
+            g = nn.Embedding(
+                num_embeddings[1], embedding_dim[1], padding_idx=padding_idx)
         # bridge function
         bx = nn.Sequential(
             nn.Linear(embedding_dim[0], embedding_dim[1], bias=False),
@@ -155,15 +163,7 @@ class EmbeddingAL(ALComponent):
 
         by = None
         dx = None
-        # by = nn.Sequential(
-        #     nn.Linear(embedding_dim[1], embedding_dim[0]),
-        #     nn.Sigmoid()
-        # )
-        # h function
-        # dx = nn.Sequential(
-        #     nn.Linear(embedding_dim[0], num_embeddings[0]),
-        #     nn.Sigmoid()
-        # )
+
         if num_embeddings[1] ==2:
             self.output_dim=1
         else:
@@ -185,11 +185,9 @@ class EmbeddingAL(ALComponent):
 
         p = self._s
         q = self._t
-        # print(p.shape, q.shape)
+
         p_nonzero = (p != 0.).sum(dim=1)
         p = p.sum(dim=1) / p_nonzero
-        # print(p.shape, q.shape, self.y.shape, self._t_prime.shape)
-        # print(self._t_prime.shape)
 
         if not self.reverse:
             loss_b = self.criterion_br(self.bx(p), q)
@@ -197,7 +195,6 @@ class EmbeddingAL(ALComponent):
                 loss_d = self.criterion_ae(
                     self._t_prime.squeeze(1), self.y.to(torch.float))
             else:
-                print('this loss')
                 loss_d = self.criterion_ae(self._t_prime, self.y.to(torch.float))
         else:
             loss_b = self.criterion_br(self.by(q), p)
