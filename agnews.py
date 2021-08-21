@@ -45,11 +45,14 @@ args = parser.parse_args()
 news_train = load_dataset('ag_news', split='train')
 new_test = load_dataset('ag_news', split='test')
 
+# TODO: 這個也要加進 args 裡面。
+class_num = 4
+
 train_text = [b['text'] for b in news_train]
-train_label = multi_class_process([b['label'] for b in news_train], 77)
+train_label = multi_class_process([b['label'] for b in news_train], class_num)
 
 test_text = [b['text'] for b in new_test]
-test_label = multi_class_process([b['label'] for b in new_test], 77)
+test_label = multi_class_process([b['label'] for b in new_test], class_num)
 
 clean_train = [data_preprocessing(t) for t in train_text]
 clean_test = [data_preprocessing(t) for t in test_text]
@@ -136,12 +139,12 @@ else:
 # TODO: 這裡換成這樣就好
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-emb = EmbeddingAL((args.vocab_size, 77), (args.bridge_dim,
-                                          args.bridge_dim), lin=args.one_hot_label)
-l1 = LSTMAL(args.l1_dim, args.l1_dim, (args.bridge_dim,
-                                       args.bridge_dim), dropout=0, bidirectional=True)
-l2 = LSTMAL(2*args.l1_dim, args.l1_dim, (args.bridge_dim,
-                                         args.bridge_dim), dropout=0, bidirectional=True)
+emb = EmbeddingAL((args.vocab_size, class_num), (args.word_emb,
+                                                 args.label_emb), lin=args.one_hot_label)
+l1 = LSTMAL(args.word_emb, args.label_emb, (args.l1_dim,
+                                            args.l1_dim), dropout=0, bidirectional=True)
+l2 = LSTMAL(2 * args.l1_dim, args.l1_dim, (args.bridge_dim,
+                                           args.bridge_dim), dropout=0, bidirectional=True)
 model = SentAL(emb, l1, l2)
 model = model.to(device)
 print('AL agnews model param num', get_n_params(model))

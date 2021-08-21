@@ -62,15 +62,18 @@ def create_vocab(corpus, vocab_size=30000):
     count_words = Counter(corpus)
     print('total count words', len(count_words))
     sorted_words = count_words.most_common()
+
     if vocab_size > len(sorted_words):
         v = len(sorted_words)
     else:
-        v = vocab_size - 1
-    vocab_to_int = {w: i+2 for i, (w, c) in enumerate(sorted_words[:v])}
+        v = vocab_size - 2
+
+    vocab_to_int = {w: i + 2 for i, (w, c) in enumerate(sorted_words[:v])}
 
     vocab_to_int['<pad>'] = 0
     vocab_to_int['<unk>'] = 1
     print('vocab size', len(vocab_to_int))
+    
     return vocab_to_int
 
 

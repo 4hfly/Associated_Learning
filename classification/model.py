@@ -164,8 +164,8 @@ class EmbeddingAL(ALComponent):
         by = None
         dx = None
 
-        if num_embeddings[1] ==2:
-            self.output_dim=1
+        if num_embeddings[1] == 2:
+            self.output_dim = 1
         else:
             self.output_dim = num_embeddings[1]
 
@@ -191,11 +191,12 @@ class EmbeddingAL(ALComponent):
 
         if not self.reverse:
             loss_b = self.criterion_br(self.bx(p), q)
-            if self.output_dim==1:
+            if self.output_dim == 1:
                 loss_d = self.criterion_ae(
                     self._t_prime.squeeze(1), self.y.to(torch.float))
             else:
-                loss_d = self.criterion_ae(self._t_prime, self.y.to(torch.float))
+                loss_d = self.criterion_ae(
+                    self._t_prime, self.y.to(torch.float))
         else:
             loss_b = self.criterion_br(self.by(q), p)
             loss_d = self.criterion_ae(
