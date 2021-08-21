@@ -38,6 +38,9 @@ def get_n_params(model):
         pp += nn
     return pp
 
+def acc(pred,label):
+    pred = pred.argmax(-1)
+    return torch.sum(pred == label.squeeze()).item()
 
 def data_preprocessing(text, remove_stopword=False):
 
@@ -355,7 +358,8 @@ class Trainer:
         self.valid_loader = valid_loader
         self.test_loader = test_loader
         self.save_dir = save_dir
-
+        self.cri = nn.CrossEntropyLoss()
+        self.clip=5
         is_cuda = torch.cuda.is_available()
 
         if is_cuda:
@@ -365,161 +369,83 @@ class Trainer:
             self.device = torch.device("cpu")
             print("GPU not available, CPU used")
 
-    def run(self, epoch):
+    def run(self, epochs):
         self.valid_acc_min = -999
-        for epoch in range(epoch):
+        # train for some number of epochs
+        epoch_tr_loss,epoch_vl_loss = [],[]
+        epoch_tr_acc,epoch_vl_acc = [],[]
+
+        for epoch in range(epochs):
             train_losses = []
+            train_acc = 0.0
+            self.model.train()
 
-            total_emb_loss = []
-            total_l1_loss = []
-            total_l2_loss = []
-
-            total_acc = 0.0
-            total_count = 0
-            self.model.embedding.train()
-            self.model.layer_1.train()
-            self.model.layer_2.train()
-            self.model.embedding.training = True
-            self.model.layer_1.training = True
-            self.model.layer_2.training = True
-
-            # initialize hidden state
             for inputs, labels in self.train_loader:
-
-                self.model.train()
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
-
-                self.opt.zero_grad()
-
-                emb_loss, l1_loss, l2_loss = self.model(inputs, labels)
-
-                nn.utils.clip_grad_norm_(self.model.layer_1.parameters(), 5)
-                nn.utils.clip_grad_norm_(self.model.layer_2.parameters(), 5)
-
-                loss = emb_loss + l1_loss + l2_loss
+                
+                inputs, labels = inputs.to(self.device), labels.to(self.device)   
+            
+                self.model.zero_grad()
+                output, h = self.model(inputs)
+                loss = self.cri(output, labels)
                 loss.backward()
-
-                total_emb_loss.append(emb_loss.item())
-                total_l1_loss.append(l1_loss.item())
-                total_l2_loss.append(l2_loss.item())
-
+                train_losses.append(loss.item())
+                accuracy = acc(output,labels)
+                train_acc += accuracy
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
                 self.opt.step()
-
-                torch.cuda.empty_cache()
-
-                # calculate the loss and perform backprop
-                with torch.no_grad():
-
-                    self.model.eval()
-
-                    left = self.model.embedding.f(inputs)
-                    output, hidden = self.model.layer_1.f(left)
-                    # output, (left, c) = model.layer_2.f(output, hidden)
-                    left, (output, c) = self.model.layer_2.f(output, hidden)
-                    left = left[:, -1, :]
-                    # left = left.reshape(left.size(1), -1)
-
-                    right = self.model.layer_2.bx(left)
-                    right = self.model.layer_2.dy(right)
-                    right = self.model.layer_1.dy(right)
-                    predicted_label = torch.round(
-                        self.model.embedding.dy(right).squeeze())
-                    total_acc += (predicted_label ==
-                                  labels.to(torch.float)).sum().item()
-                    total_count += labels.size(0)
-
-                # clip_grad_norm helps prevent the exploding gradient problem in RNNs / LSTMs.
-                nn.utils.clip_grad_norm_(self.model.layer_1.parameters(), 5)
-                nn.utils.clip_grad_norm_(self.model.layer_2.parameters(), 5)
-
-            # TODO: 這個 val_losses 沒用到。
+        
             val_losses = []
             val_acc = 0.0
-            val_count = 0
+            self.model.eval()
+            with torch.no_grad():
+                for inputs, labels in self.valid_loader:
+                    inputs, labels = inputs.to(self.device), labels.to(self.device)
+                    output, val_h = self.model(inputs)
+                    val_loss = self.cri(output, labels)
+                    val_losses.append(val_loss.item())
+                    accuracy = acc(output,labels)
+                    val_acc += accuracy
 
-            self.model.embedding.eval()
-            self.model.layer_1.eval()
-            self.model.layer_2.eval()
-
-            for inputs, labels in self.valid_loader:
-
-                with torch.no_grad():
-
-                    self.model.embedding.eval()
-                    self.model.layer_1.eval()
-                    self.model.layer_2.eval()
-
-                    inputs, labels = inputs.to(
-                        self.device), labels.to(self.device)
-
-                    left = self.model.embedding.f(inputs)
-                    output, hidden = self.model.layer_1.f(left)
-
-                    left, (output, c) = self.model.layer_2.f(output, hidden)
-                    left = left[:, -1, :]
-
-                    right = self.model.layer_2.bx(left)
-                    right = self.model.layer_2.dy(right)
-                    right = self.model.layer_1.dy(right)
-                    if self.label_num == 2:
-                        predicted_label = torch.round(
-                            self.model.embedding.dy(right).squeeze())
-                        val_acc += (predicted_label ==
-                                    labels.to(torch.float)).sum().item()
-                    else:
-                        predicted_label = self.model.embedding.dy(
-                            right).squeeze()
-                        val_acc += (predicted_label.argmax(-1) ==
-                                    labels.to(torch.float)).sum().item()
-
-                    val_count += labels.size(0)
-
-            epoch_train_loss = [np.mean(total_emb_loss), np.mean(
-                total_l1_loss), np.mean(total_l2_loss)]
-            epoch_train_acc = total_acc/total_count
-            epoch_val_acc = val_acc/val_count
-
-            print(f'Epoch {epoch+1}')
-            print('train_loss : emb loss {:.4f}, layer1 loss {:.4f}, layer2 loss {:.4f}'.format(
-                epoch_train_loss[0], epoch_train_loss[1], epoch_train_loss[2]))
-            print(
-                f'train_accuracy : {epoch_train_acc*100} val_accuracy : {epoch_val_acc*100}')
+            epoch_train_loss = np.mean(train_losses)
+            epoch_val_loss = np.mean(val_losses)
+            epoch_train_acc = train_acc/len(self.train_loader.dataset)
+            epoch_val_acc = val_acc/len(self.valid_loader.dataset)
+            epoch_tr_loss.append(epoch_train_loss)
+            epoch_vl_loss.append(epoch_val_loss)
+            epoch_tr_acc.append(epoch_train_acc)
+            epoch_vl_acc.append(epoch_val_acc)
+            print(f'Epoch {epoch+1}') 
+            print(f'train_loss : {epoch_train_loss} val_loss : {epoch_val_loss}')
+            print(f'train_accuracy : {epoch_train_acc*100} val_accuracy : {epoch_val_acc*100}')
             if epoch_val_acc >= self.valid_acc_min:
                 torch.save(self.model.state_dict(), f'{self.save_dir}')
-                print('Validation acc increased ({:.6f} --> {:.6f}).  Saving model ...'.format(
-                    self.valid_acc_min, epoch_val_acc))
-                self.valid_acc_min = epoch_val_acc
+                print('Validation acc increased ({:.6f} --> {:.6f}).  Saving model ...'.format(self.valid_acc_min,epoch_val_acc))
+                self.valid_acc_min = epoch_val_loss
             print(25*'==')
-        print('best val acc', self.valid_acc_min)
+
 
     def eval(self):
+        test_losses = [] # track loss
+        num_correct = 0
         self.model.eval()
         self.model.load_state_dict(torch.load(f'{self.save_dir}'))
-        model = self.model.to(self.device)
 
-        test_acc = 0
-        test_count = 0
-
+        # iterate over test data
         for inputs, labels in self.test_loader:
-            with torch.no_grad():
-                model.embedding.eval()
-                model.layer_1.eval()
-                model.layer_2.eval()
 
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
+            inputs, labels = inputs.to(self.device), labels.to(self.device)
+            output, test_h = self.model(inputs)
+            
+            # calculate loss
+            test_loss = self.cri(output, labels)
+            test_losses.append(test_loss.item())
+            pred = output.argmax(-1)  # rounds to the nearest integer
 
-                left = model.embedding.f(inputs)
-                output, hidden = model.layer_1.f(left)
-                left, (output, c) = model.layer_2.f(output, hidden)
-                left = left[:, -1, :]
-                # left = left.reshape(left.size(1), -1)
-                right = model.layer_2.bx(left)
-                right = model.layer_2.dy(right)
-                right = model.layer_1.dy(right)
-                predicted_label = torch.round(
-                    model.embedding.dy(right).squeeze())
-                test_acc += (predicted_label ==
-                             labels.to(torch.float)).sum().item()
-                test_count += labels.size(0)
+            correct_tensor = pred.eq(labels.float().view_as(pred))
+            correct = np.squeeze(correct_tensor.cpu().numpy())
+            num_correct += np.sum(correct)
 
-        print('Test acc', test_acc/test_count)
+        print("Test loss: {:.3f}".format(np.mean(test_losses)))
+
+        test_acc = num_correct/len(self.est_loader.dataset)
+        print("Test accuracy: {:.3f}".format(test_acc))
