@@ -36,7 +36,7 @@ parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
 parser.add_argument('--batch-size', type=int, help='batch-size', default=16)
 parser.add_argument('--one-hot-label', type=bool, help='if true then use one-hot vector as label input, else integer', default=True)
-parser.add_argument('--epoch', type=int, default=20)
+parser.add_argument('--epoch', type=int, default=50)
 
 # dir param
 parser.add_argument('--save-dir', type=str, default='ckpt/banking77.al.pt')
