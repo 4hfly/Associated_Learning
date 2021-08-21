@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# TODO: 有些沒用到的 lib 我之後會拿掉喔。
 from datasets import load_dataset
 import numpy as np
 import pandas as pd
@@ -138,3 +140,5 @@ print('AL banking77 model param num', get_n_params(model))
 T = ALTrainer(model, args.lr, train_loader=train_loader, valid_loader=valid_loader, test_loader=test_loader, save_dir = args.save_dir)
 T.run(epoch=args.epoch)
 T.eval()
+
+# TODO: code 比較長，之後我會把它拆成幾個小 function，再從 main() 這邊 call，這樣可讀性比較高，ok 吧？
