@@ -31,13 +31,13 @@ parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 # training param
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
-parser.add_argument('--batch-size', type=int, help='batch-size', default=4)
+parser.add_argument('--batch-size', type=int, help='batch-size', default=32)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
 parser.add_argument('--epoch', type=int, default=20)
 
 # dir param
-parser.add_argument('--save-dir', type=str, default='data/ckpt/agnews_al.pt')
+parser.add_argument('--save-dir', type=str, default='ckpt/agnews_al.pt')
 
 args = parser.parse_args()
 
@@ -83,10 +83,6 @@ train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
 test_loader = DataLoader(test_data, shuffle=False, batch_size=batch_size)
 valid_loader = DataLoader(valid_data, shuffle=False, batch_size=batch_size)
 
-# TODO: sample 沒用到的話，之後就刪掉嗎？
-dataiter = iter(train_loader)
-sample_x, sample_y = dataiter.next()
-
 
 class SentAL(nn.Module):
 
@@ -126,18 +122,7 @@ class SentAL(nn.Module):
 
 torch.cuda.empty_cache()
 
-is_cuda = torch.cuda.is_available()
-
-# If we have a GPU available, we'll set our device to GPU. We'll use this device variable later in our code.
-if is_cuda:
-    device = torch.device("cuda")
-    print("GPU is available")
-else:
-    device = torch.device("cpu")
-    print("GPU not available, CPU used")
-
-# TODO: 這裡換成這樣就好
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 emb = EmbeddingAL((args.vocab_size, class_num), (args.word_emb,
                                                  args.label_emb), lin=args.one_hot_label)
@@ -154,3 +139,5 @@ T.run(epoch=args.epoch)
 T.eval()
 
 # TODO: code 比較長，之後我會把它拆成幾個小 function，再從 main() 這邊 call，這樣可讀性比較高，ok 吧？
+# ok, 我也覺得要再切更小一點，我目前只是為了能快速多跑幾個資料集
+
