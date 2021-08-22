@@ -8,7 +8,6 @@ from nltk.corpus import stopwords
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
 
-from classification.model import LSTMAL, EmbeddingAL
 from utils import *
 
 stop_words = set(stopwords.words('english'))
@@ -17,14 +16,10 @@ stop_words = set(stopwords.words('english'))
 parser = argparse.ArgumentParser('AGNews Dataset for AL training')
 
 # model param
-parser.add_argument('--word-emb', type=int,
+parser.add_argument('--emb_dim', type=int,
                     help='word embedding dimension', default=300)
-parser.add_argument('--label-emb', type=int,
-                    help='label embedding dimension', default=128)
-parser.add_argument('--l1-dim', type=int,
-                    help='lstm1 hidden dimension', default=300)
-parser.add_argument('--bridge-dim', type=int,
-                    help='bridge function dimension', default=300)
+parser.add_argument('--hid-dim', type=int,
+                    help='lstm hidden dimension', default=300)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 # training param
@@ -32,7 +27,7 @@ parser.add_argument('--lr', type=float, help='lr', default=0.001)
 parser.add_argument('--batch-size', type=int, help='batch-size', default=4)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
-parser.add_argument('--epoch', type=int, default=20)
+parser.add_argument('--epoch', type=int, default=50)
 
 # dir param
 parser.add_argument('--save-dir', type=str, default='data/ckpt/agnews_al.pt')
@@ -88,38 +83,34 @@ sample_x, sample_y = dataiter.next()
 
 class ClsAL(nn.Module):
 
-    def __init__(self, emb, l1, l2):
+    def __init__(
+        self, vocab_size, embedding_dim, hidden_dim, n_layers, class_num, drop_prob=0.5
+    ):
 
         super(ClsAL, self).__init__()
 
-        self.embedding = emb
-        self.layer_1 = l1
-        self.layer_2 = l2
-        self.dropout = nn.Dropout(0.1)
+        self.hidden_dim = hidden_dim
+        self.n_layers = n_layers
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.lstm = nn.LSTM(embedding_dim, hidden_dim, n_layers,
+                            dropout=drop_prob, batch_first=True, bidirectional=True)
+        self.dropout = nn.Dropout(0.3)
+        self.fc = nn.Sequential(
+            nn.Linear(hidden_dim * 2, 400),
+            nn.ReLU(),
+            nn.Linear(400, class_num)
+        )
+        self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, x, y):
+    def forward(self, x):
 
-        batch_size = x.size(0)
-        direction = 2
-
-        emb_x, emb_y, = self.embedding(x, y)
-        emb_x, emb_y = self.dropout(emb_x), self.dropout(emb_y)
-        # print(self.embedding._t_prime.shape, self.embedding.y.shape)
-        emb_loss = self.embedding.loss()
-
-        layer_1_x, h1, layer_1_y = self.layer_1(emb_x.detach(), emb_y.detach())
-        layer_1_x, layer_1_y = self.dropout(layer_1_x), self.dropout(layer_1_y)
-        layer_1_loss = self.layer_1.loss()
-
-        h, c = h1
-        h = h.reshape(direction, batch_size, -1)
-        h1 = (h.detach(), c.detach())
-
-        layer_2_x, h2, layer_2_y = self.layer_2(
-            layer_1_x.detach(), layer_1_y.detach(), h1)
-        layer_2_loss = self.layer_2.loss()
-
-        return emb_loss, layer_1_loss, layer_2_loss
+        embeds = self.embedding(x)
+        lstm_out, hidden = self.lstm(embeds)
+        lstm_out = lstm_out[:, -1, :]
+        out = self.dropout(lstm_out)
+        out = self.fc(out)
+        out = self.softmax(out)
+        return out, hidden
 
 
 torch.cuda.empty_cache()
@@ -137,18 +128,12 @@ else:
 # TODO: 這裡換成這樣就好
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-emb = EmbeddingAL((args.vocab_size, class_num), (args.word_emb,
-                                                 args.label_emb), lin=args.one_hot_label)
-l1 = LSTMAL(args.word_emb, args.label_emb, (args.l1_dim,
-                                            args.l1_dim), dropout=0, bidirectional=True)
-l2 = LSTMAL(2 * args.l1_dim, args.l1_dim, (args.bridge_dim,
-                                           args.bridge_dim), dropout=0, bidirectional=True)
-model = ClsAL(emb, l1, l2)
+model = ClsAL(args.vocab_size, args.emb_dim, args.hid_dim, 2, class_num)
 model = model.to(device)
-print('AL agnews model param num', get_n_params(model))
-T = ALTrainer(model, args.lr, train_loader=train_loader,
-              valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
-T.run(epoch=args.epoch)
+print('agnews lstm model param num', get_n_params(model))
+T = Trainer(model, args.lr, train_loader=train_loader,
+            valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
+T.run(epochs=args.epoch)
 T.eval()
 
 # TODO: code 比較長，之後我會把它拆成幾個小 function，再從 main() 這邊 call，這樣可讀性比較高，ok 吧？
