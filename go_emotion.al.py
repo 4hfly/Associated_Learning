@@ -1,3 +1,4 @@
+from agnews_norm import X_valid
 from datasets import load_dataset
 import numpy as np
 import pandas as pd
@@ -26,17 +27,17 @@ go_val = load_dataset('go_emotions', split='validation')
 go_test = load_dataset('go_emotions', split='test')
 
 train_text = [b['text'] for b in go_train]
-train_label = multi_label_process([b['labels'] for b in go_train])
+train_label = multi_label_process([b['labels'] for b in go_train], 27)
 
 val_text = [b['text'] for b in go_val]
-val_label = multi_label_process([b['labels'] for b in go_val])
+val_label = multi_label_process([b['labels'] for b in go_val], 27)
 
 test_text = [b['text'] for b in go_test]
-test_label = multi_label_process([b['labels'] for b in go_test])
+test_label = multi_label_process([b['labels'] for b in go_test], 27)
 
-clean_train = [data_preprocessing(t) for t in train_text]
-clean_val = [data_preprocessing(t) for t in val_text]
-clean_test = [data_preprocessing(t) for t in test_text]
+clean_train = [data_preprocessing(t, True) for t in train_text]
+clean_val = [data_preprocessing(t, True) for t in val_text]
+clean_test = [data_preprocessing(t, True) for t in test_text]
 
 vocab = create_vocab(clean_train)
 
@@ -47,28 +48,26 @@ clean_val_id = convert2id(clean_val, vocab)
 max_len = max([len(s) for s in clean_train_id])
 print('max seq length',max_len)
 
-raise Exception()
-
 train_features = Padding(clean_train_id, max_len)
 val_features = Padding(clean_val_id, max_len)
 test_features = Padding(clean_test_id, max_len)
 
-X_train, X_valid, y_train, y_valid = train_test_split(train_features, np.array(train_label), test_size=0.2, random_state=1)
-X_test, y_test = test_features, np.array(test_label)
-print(y_train.shape)
+y_train = [torch.tensor(x) for x in train_label]
+y_valid = [torch.tensor(x) for x in val_label]
+y_test = [torch.tensor(x) for x in test_label]
+X_train = train_features
+X_valid = val_features
+X_test = test_features
 
-train_data = TensorDataset(torch.from_numpy(X_train), torch.from_numpy(y_train))
-test_data = TensorDataset(torch.from_numpy(X_test), torch.from_numpy(y_test))
-valid_data = TensorDataset(torch.from_numpy(X_valid), torch.from_numpy(y_valid))
+train_data = TensorDataset(torch.from_numpy(X_train), torch.stack(y_train, dim=0))
+test_data = TensorDataset(torch.from_numpy(X_test), torch.stack(y_test, dim=0))
+valid_data = TensorDataset(torch.from_numpy(X_valid), torch.stack(y_valid, dim=0))
 
-batch_size = 16
+batch_size = 64
 
 train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
 test_loader = DataLoader(test_data, shuffle=False, batch_size=batch_size)
 valid_loader = DataLoader(valid_data, shuffle=False, batch_size=batch_size)
-
-dataiter = iter(train_loader)
-sample_x, sample_y = dataiter.next()
 
 
 class SentAL(nn.Module):
@@ -85,7 +84,7 @@ class SentAL(nn.Module):
 
         emb_x, emb_y, = self.embedding(x, y)
         emb_x, emb_y = self.dropout(emb_x), self.dropout(emb_y)
-        # print(self.embedding._t_prime.shape, self.embedding.y.shape)
+
         emb_loss = self.embedding.loss() 
 
         layer_1_x, h1 , layer_1_y = self.layer_1(emb_x.detach(), emb_y.detach())
@@ -116,7 +115,7 @@ else:
 
 vocab_size = len(vocab)+1
 
-emb = EmbeddingAL((vocab_size, 77), (300, 300))
+emb = EmbeddingAL((vocab_size, 27), (300, 300))
 l1 = LSTMAL(300, 300, (300,300), dropout=0, bidirectional=True)
 l2 = LSTMAL(600, 300, (300,300), dropout=0, bidirectional=True)
 model = SentAL(emb, l1, l2)

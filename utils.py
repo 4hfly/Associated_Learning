@@ -349,7 +349,7 @@ class ALTrainer:
 class Trainer:
 
     def __init__(
-        self, model, lr, train_loader, valid_loader, test_loader, save_dir, label_num=None
+        self, model, lr, train_loader, valid_loader, test_loader, save_dir, label_num=None, loss_w=None
     ):
 
         # Still need a arg parser to pass arguments
@@ -357,8 +357,8 @@ class Trainer:
         # 傳參反而有點麻煩，而且 trace 會比較困難。
 
         self.model = model
-        self.opt = torch.optim.SGD(self.model.parameters(), lr=0.01, momentum=0.9)
-        # self.opt = torch.optim.Adam(self.model.parameters(), lr=lr)
+        # self.opt = torch.optim.SGD(self.model.parameters(), lr=0.01, momentum=0.9)
+        self.opt = torch.optim.Adam(self.model.parameters(), lr=lr)
         self.label_num = label_num
         self.epoch_tr_loss, self.epoch_vl_loss = [], []
         self.epoch_tr_acc, self.epoch_vl_acc = [], []
@@ -366,7 +366,10 @@ class Trainer:
         self.valid_loader = valid_loader
         self.test_loader = test_loader
         self.save_dir = save_dir
-        self.cri = nn.CrossEntropyLoss()
+        if loss_w is not None:
+            self.cri = nn.CrossEntropyLoss(weight=loss_w.cuda())
+        else:
+            self.cri = nn.CrossEntropyLoss()
         self.clip = 5
         is_cuda = torch.cuda.is_available()
 
