@@ -19,18 +19,18 @@ parser = argparse.ArgumentParser('AGNews Dataset for AL training')
 parser.add_argument('--emb_dim', type=int,
                     help='word embedding dimension', default=300)
 parser.add_argument('--hid-dim', type=int,
-                    help='lstm hidden dimension', default=300)
+                    help='lstm hidden dimension', default=400)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 # training param
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
-parser.add_argument('--batch-size', type=int, help='batch-size', default=4)
+parser.add_argument('--batch-size', type=int, help='batch-size', default=16)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
-parser.add_argument('--epoch', type=int, default=50)
+parser.add_argument('--epoch', type=int, default=20)
 
 # dir param
-parser.add_argument('--save-dir', type=str, default='data/ckpt/agnews_al.pt')
+parser.add_argument('--save-dir', type=str, default='ckpt/agnews.pt')
 
 args = parser.parse_args()
 
@@ -47,8 +47,8 @@ train_label = multi_class_process([b['label'] for b in news_train], class_num)
 test_text = [b['text'] for b in new_test]
 test_label = multi_class_process([b['label'] for b in new_test], class_num)
 
-clean_train = [data_preprocessing(t) for t in train_text]
-clean_test = [data_preprocessing(t) for t in test_text]
+clean_train = [data_preprocessing(t, True) for t in train_text]
+clean_test = [data_preprocessing(t, True) for t in test_text]
 
 vocab = create_vocab(clean_train)
 
@@ -76,10 +76,6 @@ train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
 test_loader = DataLoader(test_data, shuffle=False, batch_size=batch_size)
 valid_loader = DataLoader(valid_data, shuffle=False, batch_size=batch_size)
 
-# TODO: sample 沒用到的話，之後就刪掉嗎？
-dataiter = iter(train_loader)
-sample_x, sample_y = dataiter.next()
-
 
 class ClsAL(nn.Module):
 
@@ -94,7 +90,7 @@ class ClsAL(nn.Module):
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
         self.lstm = nn.LSTM(embedding_dim, hidden_dim, n_layers,
                             dropout=drop_prob, batch_first=True, bidirectional=True)
-        self.dropout = nn.Dropout(0.3)
+        self.dropout = nn.Dropout(0.1)
         self.fc = nn.Sequential(
             nn.Linear(hidden_dim * 2, 400),
             nn.ReLU(),
@@ -115,18 +111,8 @@ class ClsAL(nn.Module):
 
 torch.cuda.empty_cache()
 
-is_cuda = torch.cuda.is_available()
-
-# If we have a GPU available, we'll set our device to GPU. We'll use this device variable later in our code.
-if is_cuda:
-    device = torch.device("cuda")
-    print("GPU is available")
-else:
-    device = torch.device("cpu")
-    print("GPU not available, CPU used")
-
 # TODO: 這裡換成這樣就好
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 model = ClsAL(args.vocab_size, args.emb_dim, args.hid_dim, 2, class_num)
 model = model.to(device)

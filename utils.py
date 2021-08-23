@@ -96,6 +96,7 @@ def multi_class_process(labels, label_num):
 def multi_label_process(labels, label_num):
     '''
     TODO: 這個是多出來的？
+    multi-label用的
     this function will convert multi-label lists into one-hot vector or n-hot vector
     '''
     hot_vecs = []
@@ -150,7 +151,8 @@ class ALTrainer:
         # 傳參反而有點麻煩，而且 trace 會比較困難。
 
         self.model = model
-        self.opt = torch.optim.Adam(self.model.parameters(), lr=lr)
+        self.opt = torch.optim.Adam(self.model.parameters(), lr=0.001)
+        # self.opt = torch.optim.SGD(self.model.parameters(), lr=0.1, momentum=0.9)
         self.label_num = label_num
         self.epoch_tr_loss, self.epoch_vl_loss = [], []
         self.epoch_tr_acc, self.epoch_vl_acc = [], []
@@ -290,10 +292,9 @@ class ALTrainer:
             epoch_val_acc = val_acc/val_count
 
             print(f'Epoch {epoch+1}')
-            print(
-                f'train_loss : emb loss {epoch_train_loss[0]}, layer1 loss {epoch_train_loss[1]}, layer2 loss {epoch_train_loss[2]}')
-            print(
-                f'train_accuracy : {epoch_train_acc*100} val_accuracy : {epoch_val_acc*100}')
+            print(f'train_loss : emb loss {epoch_train_loss[0]}, layer1 loss {epoch_train_loss[1]}, layer2 loss {epoch_train_loss[2]}')
+            print(f'train_accuracy : {epoch_train_acc*100} val_accuracy : {epoch_val_acc*100}')
+            
             if epoch_val_acc >= self.valid_acc_min:
                 torch.save(self.model.state_dict(), f'{self.save_dir}')
                 print('Validation acc increased ({:.6f} --> {:.6f}).  Saving model ...'.format(
@@ -356,7 +357,8 @@ class Trainer:
         # 傳參反而有點麻煩，而且 trace 會比較困難。
 
         self.model = model
-        self.opt = torch.optim.Adam(self.model.parameters(), lr=lr)
+        self.opt = torch.optim.SGD(self.model.parameters(), lr=0.01, momentum=0.9)
+        # self.opt = torch.optim.Adam(self.model.parameters(), lr=lr)
         self.label_num = label_num
         self.epoch_tr_loss, self.epoch_vl_loss = [], []
         self.epoch_tr_acc, self.epoch_vl_acc = [], []
@@ -381,46 +383,51 @@ class Trainer:
         # train for some number of epochs
         epoch_tr_loss, epoch_vl_loss = [], []
         epoch_tr_acc, epoch_vl_acc = [], []
-
+        
         for epoch in range(epochs):
             train_losses = []
             train_acc = 0.0
             self.model.train()
-
+            train_count = 0
             for inputs, labels in self.train_loader:
 
                 # NOTE: 吃 class 的 index，所以用 argmax。
                 labels = torch.argmax(labels.long(), dim=1)
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
 
-                self.model.zero_grad()
+                self.opt.zero_grad()
                 output, h = self.model(inputs)
+                
                 loss = self.cri(output, labels)
                 loss.backward()
                 train_losses.append(loss.item())
                 # accuracy = acc(output,labels)
                 train_acc += (output.argmax(-1) == labels.float()).sum().item()
-                nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
+                # nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
                 self.opt.step()
+                train_count += labels.size(0)
 
             val_losses = []
             val_acc = 0.0
+            val_count = 0
             self.model.eval()
             with torch.no_grad():
                 for inputs, labels in self.valid_loader:
                     inputs, labels = inputs.to(
                         self.device), labels.to(self.device)
+                    labels = torch.argmax(labels.long(), dim=1)
                     output, val_h = self.model(inputs)
                     val_loss = self.cri(output, labels)
                     val_losses.append(val_loss.item())
                     # accuracy = acc(output,labels)
                     val_acc += (output.argmax(-1) ==
                                 labels.float()).sum().item()
+                    val_count += labels.size(0)
 
             epoch_train_loss = np.mean(train_losses)
             epoch_val_loss = np.mean(val_losses)
-            epoch_train_acc = train_acc/len(self.train_loader.dataset)
-            epoch_val_acc = val_acc/len(self.valid_loader.dataset)
+            epoch_train_acc = train_acc/train_count
+            epoch_val_acc = val_acc/val_count
             epoch_tr_loss.append(epoch_train_loss)
             epoch_vl_loss.append(epoch_val_loss)
             epoch_tr_acc.append(epoch_train_acc)
@@ -430,19 +437,21 @@ class Trainer:
                 f'train_loss : {epoch_train_loss} val_loss : {epoch_val_loss}')
             print(
                 f'train_accuracy : {epoch_train_acc*100} val_accuracy : {epoch_val_acc*100}')
+
             if epoch_val_acc >= self.valid_acc_min:
                 torch.save(self.model.state_dict(), f'{self.save_dir}')
                 print('Validation acc increased ({:.6f} --> {:.6f}).  Saving model ...'.format(
                     self.valid_acc_min, epoch_val_acc))
-                self.valid_acc_min = epoch_val_loss
+                self.valid_acc_min = epoch_val_acc
             print(25*'==')
+        print('best valid acc', self.valid_acc_min)
 
     def eval(self):
         test_losses = []  # track loss
         num_correct = 0
         self.model.eval()
         self.model.load_state_dict(torch.load(f'{self.save_dir}'))
-
+        test_count = 0
         # iterate over test data
         for inputs, labels in self.test_loader:
 
@@ -457,8 +466,9 @@ class Trainer:
             # correct_tensor = pred.eq(labels.float().view_as(pred))
             # correct = np.squeeze(correct_tensor.cpu().numpy())
             num_correct += (pred == labels.float()).sum().item()
+            test_count += labels.size(0)
 
         print("Test loss: {:.3f}".format(np.mean(test_losses)))
 
-        test_acc = num_correct/len(self.test_loader.dataset)
+        test_acc = num_correct/test_count
         print("Test accuracy: {:.3f}".format(test_acc))

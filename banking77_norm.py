@@ -46,10 +46,10 @@ bank_train = load_dataset('banking77', split='train')
 bank_test = load_dataset('banking77', split='test')
 
 train_text = [b['text'] for b in bank_train]
-train_label = [b['label'] for b in bank_train]
+train_label = multi_class_process([b['label'] for b in bank_train], 77)
 
 test_text = [b['text'] for b in bank_test]
-test_label = [b['label'] for b in bank_test]
+test_label = multi_class_process([b['label'] for b in bank_test], 77)
 
 clean_train = [data_preprocessing(t) for t in train_text]
 clean_test = [data_preprocessing(t) for t in test_text]
@@ -69,9 +69,9 @@ print('train label num', len(train_label))
 X_train, X_valid, y_train, y_valid = train_test_split(train_features, train_label, test_size=0.2, random_state=1)
 X_test, y_test = test_features, test_label
 
-train_data = TensorDataset(torch.from_numpy(X_train), torch.tensor(y_train, dtype=torch.int64))
-test_data = TensorDataset(torch.from_numpy(X_test), torch.tensor(y_test, dtype=torch.int64))
-valid_data = TensorDataset(torch.from_numpy(X_valid), torch.tensor(y_valid, dtype=torch.int64))
+train_data = TensorDataset(torch.from_numpy(X_train), torch.stack(y_train))
+test_data = TensorDataset(torch.from_numpy(X_test), torch.stack(y_test))
+valid_data = TensorDataset(torch.from_numpy(X_valid), torch.stack(y_valid))
 
 batch_size = args.batch_size
 

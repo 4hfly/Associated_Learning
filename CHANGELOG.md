@@ -14,3 +14,9 @@
     2. pytorch: 1.8.1
         - anaconda 上最新好像就這個版本，官網 stable 是到 1.9.0。
     3. CUDA: 11.3(newest 11.4)
+
+## Discussion
+
+    1. I think one thing is weird, sometimes agnews will not converge to the right way(acc 25%), i don't know why will this happen, maybe it's because i did not remove the stopwords?
+
+    2. Banking77 is also a bit weird, i'm not sure why did it perform so bad on normal lstm, but i will try to train it with sgd this week
