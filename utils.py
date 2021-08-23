@@ -198,11 +198,11 @@ class ALTrainer:
 
                 emb_loss, l1_loss, l2_loss = self.model(inputs, labels)
 
-                nn.utils.clip_grad_norm_(self.model.layer_1.parameters(), 5)
-                nn.utils.clip_grad_norm_(self.model.layer_2.parameters(), 5)
-
                 loss = emb_loss + l1_loss + l2_loss
                 loss.backward()
+
+                # nn.utils.clip_grad_norm_(self.model.layer_1.parameters(), 5, error_if_nonfinite=True)
+                # nn.utils.clip_grad_norm_(self.model.layer_2.parameters(), 5, error_if_nonfinite=True)
 
                 total_emb_loss.append(emb_loss.item())
                 total_l1_loss.append(l1_loss.item())
@@ -241,8 +241,8 @@ class ALTrainer:
                     total_count += labels.size(0)
 
                 # clip_grad_norm helps prevent the exploding gradient problem in RNNs / LSTMs.
-                nn.utils.clip_grad_norm_(self.model.layer_1.parameters(), 5)
-                nn.utils.clip_grad_norm_(self.model.layer_2.parameters(), 5)
+                # nn.utils.clip_grad_norm_(self.model.layer_1.parameters(), 5)
+                # nn.utils.clip_grad_norm_(self.model.layer_2.parameters(), 5)
 
             # TODO: 這個 val_losses 沒用到。
             val_losses = []
@@ -406,7 +406,7 @@ class Trainer:
                 train_losses.append(loss.item())
                 # accuracy = acc(output,labels)
                 train_acc += (output.argmax(-1) == labels.float()).sum().item()
-                # nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.clip, error_if_nonfinite=True)
                 self.opt.step()
                 train_count += labels.size(0)
 

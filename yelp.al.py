@@ -28,7 +28,7 @@ parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 # training param
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
-parser.add_argument('--batch-size', type=int, help='batch-size', default=32)
+parser.add_argument('--batch-size', type=int, help='batch-size', default=64)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
 parser.add_argument('--epoch', type=int, default=20)
@@ -130,7 +130,7 @@ l2 = LSTMAL(2 * args.l1_dim, args.l1_dim, (args.bridge_dim,
                                            args.bridge_dim), dropout=0, bidirectional=True)
 model = ClsAL(emb, l1, l2)
 model = model.to(device)
-print('AL agnews model param num', get_n_params(model))
+print('AL Yelp full model param num', get_n_params(model))
 T = ALTrainer(model, args.lr, train_loader=train_loader,
               valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
 T.run(epoch=args.epoch)
