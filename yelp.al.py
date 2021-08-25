@@ -28,7 +28,7 @@ parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 # training param
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
-parser.add_argument('--batch-size', type=int, help='batch-size', default=64)
+parser.add_argument('--batch-size', type=int, help='batch-size', default=128)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
 parser.add_argument('--epoch', type=int, default=20)
@@ -43,7 +43,6 @@ args = parser.parse_args()
 news_train = load_dataset('yelp_review_full', split='train')
 new_test = load_dataset('yelp_review_full', split='test')
 
-# TODO: 這個也要加進 args 裡面。
 class_num = args.class_num
 
 train_text = [b['text'] for b in news_train]
@@ -53,7 +52,31 @@ test_text = [b['text'] for b in new_test]
 test_label = multi_class_process([b['label'] for b in new_test], class_num)
 
 clean_train = [data_preprocessing(t) for t in train_text]
+
+lst = []
+
+new_clean_train = []
+new_train_label=[]
+for i, c in enumerate(clean_train):
+    if len(c) == 0 or c == '' or c == "":
+        lst.append(i)
+    else:
+        new_clean_train.append(c)
+        new_train_label.append(train_label[i])
+clean_train = new_clean_train
+train_label=new_train_label
+
 clean_test = [data_preprocessing(t) for t in test_text]
+new_clean_test=[]
+new_test_label=[]
+for i, c in enumerate(clean_test):
+    if len(c) == 0 or c == '' or c == "":
+        lst.append(i)
+    else:
+        new_clean_test.append(c)
+        new_test_label.append(test_label[i])
+clean_test = new_clean_test
+test_label = new_test_label
 
 vocab = create_vocab(clean_train)
 
@@ -69,6 +92,9 @@ test_features = Padding(clean_test_id, max_len)
 print('train label num', len(train_label))
 X_train, X_valid, y_train, y_valid = train_test_split(
     train_features, train_label, test_size=0.2, random_state=1)
+
+# X_train, y_train = train_features, train_label
+# X_valid, y_valid = X_train, y_train
 X_test, y_test = test_features, test_label
 
 train_data = TensorDataset(torch.from_numpy(X_train), torch.stack(y_train,dim=0))
@@ -94,17 +120,19 @@ class ClsAL(nn.Module):
         self.dropout = nn.Dropout(0.1)
 
     def forward(self, x, y):
-
+        
         batch_size = x.size(0)
         direction = 2
 
         emb_x, emb_y, = self.embedding(x, y)
+
         emb_x, emb_y = self.dropout(emb_x), self.dropout(emb_y)
         # print(self.embedding._t_prime.shape, self.embedding.y.shape)
         emb_loss = self.embedding.loss()
 
         layer_1_x, h1, layer_1_y = self.layer_1(emb_x.detach(), emb_y.detach())
         layer_1_x, layer_1_y = self.dropout(layer_1_x), self.dropout(layer_1_y)
+
         layer_1_loss = self.layer_1.loss()
 
         h, c = h1
@@ -113,6 +141,7 @@ class ClsAL(nn.Module):
 
         layer_2_x, h2, layer_2_y = self.layer_2(
             layer_1_x.detach(), layer_1_y.detach(), h1)
+
         layer_2_loss = self.layer_2.loss()
 
         return emb_loss, layer_1_loss, layer_2_loss
