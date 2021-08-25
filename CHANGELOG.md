@@ -20,3 +20,7 @@
     1. I think one thing is weird, sometimes agnews will not converge to the right way(acc 25%), i don't know why will this happen, maybe it's because i did not remove the stopwords?
 
     2. Banking77 is also a bit weird, i'm not sure why did it perform so bad on normal lstm, but i will try to train it with sgd this week
+
+## TODO
+
+    1. Transformer encoder: position encoding.
