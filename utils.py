@@ -151,7 +151,7 @@ class ALTrainer:
         # 傳參反而有點麻煩，而且 trace 會比較困難。
 
         self.model = model
-        self.opt = torch.optim.Adam(self.model.parameters(), lr=0.001)
+        self.opt = torch.optim.Adam(self.model.parameters(), lr=lr)
         # self.opt = torch.optim.SGD(self.model.parameters(), lr=0.1, momentum=0.9)
         self.label_num = label_num
         self.epoch_tr_loss, self.epoch_vl_loss = [], []
@@ -201,8 +201,8 @@ class ALTrainer:
                 loss = emb_loss + l1_loss + l2_loss
                 loss.backward()
 
-                # nn.utils.clip_grad_norm_(self.model.layer_1.parameters(), 5, error_if_nonfinite=True)
-                # nn.utils.clip_grad_norm_(self.model.layer_2.parameters(), 5, error_if_nonfinite=True)
+                nn.utils.clip_grad_norm_(self.model.layer_1.parameters(), 5, error_if_nonfinite=True)
+                nn.utils.clip_grad_norm_(self.model.layer_2.parameters(), 5, error_if_nonfinite=True)
 
                 total_emb_loss.append(emb_loss.item())
                 total_l1_loss.append(l1_loss.item())
@@ -219,10 +219,8 @@ class ALTrainer:
 
                     left = self.model.embedding.f(inputs)
                     output, hidden = self.model.layer_1.f(left)
-                    # output, (left, c) = model.layer_2.f(output, hidden)
                     left, (output, c) = self.model.layer_2.f(output, hidden)
                     left = left[:, -1, :]
-                    # left = left.reshape(left.size(1), -1)
 
                     right = self.model.layer_2.bx(left)
                     right = self.model.layer_2.dy(right)
@@ -239,10 +237,6 @@ class ALTrainer:
                                       labels.to(torch.float).argmax(-1)).sum().item()
 
                     total_count += labels.size(0)
-
-                # clip_grad_norm helps prevent the exploding gradient problem in RNNs / LSTMs.
-                # nn.utils.clip_grad_norm_(self.model.layer_1.parameters(), 5)
-                # nn.utils.clip_grad_norm_(self.model.layer_2.parameters(), 5)
 
             # TODO: 這個 val_losses 沒用到。
             val_losses = []

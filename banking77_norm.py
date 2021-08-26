@@ -16,6 +16,7 @@ from sklearn.model_selection import train_test_split
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 import torch.nn as nn
+import torch.nn.functional as F
 
 from classification.model import EmbeddingAL, LSTMAL
 from utils import *
@@ -47,7 +48,7 @@ bank_test = load_dataset('banking77', split='test')
 
 train_text = [b['text'] for b in bank_train]
 train_label = multi_class_process([b['label'] for b in bank_train], 77)
-
+label_dist = Counter([b['label'] for b in bank_train])
 test_text = [b['text'] for b in bank_test]
 test_label = multi_class_process([b['label'] for b in bank_test], 77)
 
@@ -130,9 +131,21 @@ else:
     device = torch.device("cpu")
     print("GPU not available, CPU used")
 
+dist = []
+
+for i in range(len(label_dist)):
+    dist.append(label_dist[i])
+
+m = sum(dist)
+print(m)
+dist = [x/m for x in dist]
+dist = [1/x for x in dist]
+dist = torch.tensor(dist)
+dist = F.normalize(dist,dim=0)
+
 model = sentimentLSTM(args.vocab_size, args.emb_dim, args.hid_dim, 2)
 model = model.to(device)
 print('LSTM banking77 model param num', get_n_params(model))
-T = Trainer(model, args.lr, train_loader=train_loader, valid_loader=valid_loader, test_loader=test_loader, save_dir = args.save_dir)
+T = Trainer(model, args.lr, train_loader=train_loader, valid_loader=valid_loader, test_loader=test_loader, save_dir = args.save_dir, loss_w=dist)
 T.run(epochs=args.epoch)
 T.eval()
