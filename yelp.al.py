@@ -51,7 +51,7 @@ train_label = multi_class_process([b['label'] for b in news_train], class_num)
 test_text = [b['text'] for b in new_test]
 test_label = multi_class_process([b['label'] for b in new_test], class_num)
 
-clean_train = [data_preprocessing(t) for t in train_text]
+clean_train = [data_preprocessing(t, True) for t in train_text]
 
 lst = []
 
@@ -66,7 +66,7 @@ for i, c in enumerate(clean_train):
 clean_train = new_clean_train
 train_label=new_train_label
 
-clean_test = [data_preprocessing(t) for t in test_text]
+clean_test = [data_preprocessing(t, True) for t in test_text]
 new_clean_test=[]
 new_test_label=[]
 for i, c in enumerate(clean_test):
@@ -85,7 +85,7 @@ clean_test_id = convert2id(clean_test, vocab)
 
 max_len = max([len(s) for s in clean_train_id])
 print('max seq length', max_len)
-
+max_len = 400
 train_features = Padding(clean_train_id, max_len)
 test_features = Padding(clean_test_id, max_len)
 
@@ -93,8 +93,6 @@ print('train label num', len(train_label))
 X_train, X_valid, y_train, y_valid = train_test_split(
     train_features, train_label, test_size=0.2, random_state=1)
 
-# X_train, y_train = train_features, train_label
-# X_valid, y_valid = X_train, y_train
 X_test, y_test = test_features, test_label
 
 train_data = TensorDataset(torch.from_numpy(X_train), torch.stack(y_train,dim=0))

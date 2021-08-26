@@ -151,7 +151,7 @@ class ALTrainer:
         # 傳參反而有點麻煩，而且 trace 會比較困難。
 
         self.model = model
-        self.opt = torch.optim.Adam(self.model.parameters(), lr=0.001)
+        self.opt = torch.optim.Adam(self.model.parameters(), lr=lr)
         # self.opt = torch.optim.SGD(self.model.parameters(), lr=0.1, momentum=0.9)
         self.label_num = label_num
         self.epoch_tr_loss, self.epoch_vl_loss = [], []

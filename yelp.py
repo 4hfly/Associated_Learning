@@ -48,8 +48,8 @@ train_label = multi_class_process([b['label'] for b in news_train], class_num)
 test_text = [b['text'] for b in new_test]
 test_label = multi_class_process([b['label'] for b in new_test], class_num)
 
-clean_train = [data_preprocessing(t) for t in train_text]
-clean_test = [data_preprocessing(t) for t in test_text]
+clean_train = [data_preprocessing(t, True) for t in train_text]
+clean_test = [data_preprocessing(t, True) for t in test_text]
 
 lst = []
 
@@ -83,7 +83,7 @@ clean_test_id = convert2id(clean_test, vocab)
 
 max_len = max([len(s) for s in clean_train_id])
 print('max seq length', max_len)
-
+max_len=400
 train_features = Padding(clean_train_id, max_len)
 test_features = Padding(clean_test_id, max_len)
 
