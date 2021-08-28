@@ -376,6 +376,61 @@ class LSTMAL(ALComponent):
         return loss_b + loss_d
 
 
+class TransformerEncoderAL(ALComponent):
+
+    def __init__(
+        self,
+        d_model: Tuple[int, int],
+        nhead: int,
+        dim_feedforward: Tuple[int, int] = (2048, 512),
+        dropout: float = 0.1,
+        activation: str = "relu",
+        layer_norm_eps: float = 1e-5,
+        batch_first: bool = True
+    ) -> None:
+
+        # TODO: pytorch v1.9.0 有 layer_norm_eps, batch_first 兩個參數，v1.8.1 沒有。
+        f = nn.TransformerEncoderLayer(
+            d_model[0], nhead, dim_feedforward=dim_feedforward[0], dropout=dropout, activation=activation)
+        g = nn.Sequential(
+            nn.Linear(d_model[1], dim_feedforward[1], bias=False),
+            nn.ReLU6()
+        )
+        bx = nn.Sequential(
+            nn.Linear(dim_feedforward[0], dim_feedforward[1], bias=False),
+            nn.ReLU6()
+        )
+        by = None
+        dx = None
+        dy = nn.Sequential(
+            nn.Linear(dim_feedforward[1], d_model[1], bias=False),
+            nn.ReLU6()
+        )
+        cb = nn.MSELoss(reduction='mean')
+        ca = nn.MSELoss(reduction='mean')
+
+        super().__init__(f, g, bx, by, dx, dy, cb, ca, reverse=False)
+
+    def forward(self, x, y):
+
+        # TODO: 還需要 src mask 的參數設定。
+        return super().forward(x, y)
+
+    def loss(self):
+
+        # NOTE: 預設 batch_first = False。
+        p = self._s[-1, :, :]
+        q = self._t
+
+        if not self.reverse:
+            loss_b = self.criterion_br(self.bx(p), q)
+            loss_d = self.criterion_ae(self._t_prime, self.y)
+        else:
+            raise Exception()
+
+        return loss_b + loss_d
+
+
 def load_parameters():
 
     global CONFIG
