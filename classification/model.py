@@ -150,7 +150,7 @@ class EmbeddingAL(ALComponent):
         if self.lin:
             g = nn.Sequential(
                 nn.Linear(num_embeddings[1], embedding_dim[1], bias=False),
-                nn.ELU()
+                nn.Sigmoid()
             )
         else:
             g = nn.Embedding(
@@ -158,7 +158,7 @@ class EmbeddingAL(ALComponent):
         # bridge function
         bx = nn.Sequential(
             nn.Linear(embedding_dim[0], embedding_dim[1], bias=False),
-            nn.ELU()
+            nn.Sigmoid()
         )
 
         by = None
@@ -171,7 +171,7 @@ class EmbeddingAL(ALComponent):
 
         dy = nn.Sequential(
             nn.Linear(embedding_dim[1], self.output_dim, bias=False),
-            nn.ELU()
+            nn.Sigmoid()
         )
         # loss function
         cb = nn.MSELoss(reduction='mean')
@@ -284,12 +284,12 @@ class LSTMAL(ALComponent):
         )
         g = nn.Sequential(
             nn.Linear(output_size, hidden_size[1], bias=False),
-            nn.ELU()
+            nn.Sigmoid()
         )
         # bridge function
         bx = nn.Sequential(
             nn.Linear(hidden_size[0] * self.d, hidden_size[1], bias=False),
-            nn.ELU()
+            nn.Sigmoid()
         )
         by = None
         dx = None
@@ -302,7 +302,7 @@ class LSTMAL(ALComponent):
         # dx = nn.LSTM(hidden_size[0] * self.d, input_size)
         dy = nn.Sequential(
             nn.Linear(hidden_size[1], output_size, bias=False),
-            nn.ELU()
+            nn.Sigmoid()
         )
         # loss function
         cb = nn.MSELoss(reduction='mean')

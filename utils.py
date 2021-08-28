@@ -295,7 +295,8 @@ class ALTrainer:
                     self.valid_acc_min, epoch_val_acc))
                 self.valid_acc_min = epoch_val_acc
             print(25*'==')
-
+        final_dp = self.save_dir[:-3] + 'last.pth'
+        torch.save(self.model.state_dict(), f'{final_dp}')
         print('best val acc', self.valid_acc_min)
 
     def eval(self):

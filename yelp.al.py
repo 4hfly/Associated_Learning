@@ -142,7 +142,26 @@ class ClsAL(nn.Module):
 
         layer_2_loss = self.layer_2.loss()
 
-        return emb_loss, layer_1_loss, layer_2_loss
+        return emb_loss, layer_1_loss, 2*layer_2_loss
+
+    def short_cut_emb(self, x):
+
+        left = self.embedding.f(x)
+        left = left.mean(-1)
+        right = self.embedding.bx(left)
+        right = self.embedding.dy(right)
+        return right
+
+    def short_cut_lstm(self, x):
+
+        left = self.embedding.f(x)
+        left, hidden = self.layer_1.f(left)
+        left = left[:,-1,:]
+        right = self.layer_1.bx(left)
+        right = self.layer_1.dy(right)
+        right = self.embedding.dy(right)
+        return right
+
 
 
 torch.cuda.empty_cache()
