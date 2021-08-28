@@ -140,7 +140,7 @@ class EmbeddingAL(ALComponent):
 
         if pretrained is not None:
             f = nn.Embedding.from_pretrained(
-                pretrained.vectors, padding_idx=padding_idx)
+                pretrained, padding_idx=padding_idx)
         else:
             f = nn.Embedding(
                 num_embeddings[0], embedding_dim[0], padding_idx=padding_idx)
