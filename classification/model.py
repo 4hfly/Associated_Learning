@@ -136,11 +136,15 @@ class EmbeddingAL(ALComponent):
         padding_idx: int = 0,
         reverse: bool = False,
         lin: bool = False,
+        act: nn.Module = None,
     ) -> None:
+
+        if act == None:
+            act = nn.ELU()
 
         if pretrained is not None:
             f = nn.Embedding.from_pretrained(
-                pretrained, padding_idx=padding_idx) # freeze=False
+                pretrained, padding_idx=padding_idx, freeze=True) # freeze=False
         else:
             f = nn.Embedding(
                 num_embeddings[0], embedding_dim[0], padding_idx=padding_idx)
@@ -150,7 +154,7 @@ class EmbeddingAL(ALComponent):
         if self.lin:
             g = nn.Sequential(
                 nn.Linear(num_embeddings[1], embedding_dim[1], bias=False),
-                nn.Tanh()
+                act
             )
         else:
             g = nn.Embedding(
@@ -158,7 +162,7 @@ class EmbeddingAL(ALComponent):
         # bridge function
         bx = nn.Sequential(
             nn.Linear(embedding_dim[0], embedding_dim[1], bias=False),
-            nn.Tanh()
+            act
         )
 
         by = None
@@ -171,7 +175,7 @@ class EmbeddingAL(ALComponent):
 
         dy = nn.Sequential(
             nn.Linear(embedding_dim[1], self.output_dim, bias=False),
-            nn.Tanh()
+            act
         )
         # loss function
         cb = nn.MSELoss(reduction='mean')
@@ -265,8 +269,12 @@ class LSTMAL(ALComponent):
         batch_first: bool = True,
         dropout: float = 0.,
         bidirectional: bool = False,
-        reverse: bool = False
+        reverse: bool = False,
+        act: nn.Module = None
     ) -> None:
+
+        if act == None:
+            act = nn.ELU()
 
         if bidirectional:
             self.d = 2
@@ -284,19 +292,19 @@ class LSTMAL(ALComponent):
         )
         g = nn.Sequential(
             nn.Linear(output_size, hidden_size[1], bias=False),
-            nn.Tanh()
+            act
         )
         # bridge function
         bx = nn.Sequential(
             nn.Linear(hidden_size[0] * self.d, hidden_size[1], bias=False),
-            nn.Tanh()
+            act
         )
         by = None
         dx = None
 
         dy = nn.Sequential(
             nn.Linear(hidden_size[1], output_size, bias=False),
-            nn.Tanh()
+            act
         )
         # loss function
         cb = nn.MSELoss(reduction='mean')
