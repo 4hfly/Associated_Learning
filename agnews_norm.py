@@ -77,13 +77,13 @@ test_loader = DataLoader(test_data, shuffle=False, batch_size=batch_size)
 valid_loader = DataLoader(valid_data, shuffle=False, batch_size=batch_size)
 
 
-class ClsAL(nn.Module):
+class CLSAL(nn.Module):
 
     def __init__(
         self, vocab_size, embedding_dim, hidden_dim, n_layers, class_num, drop_prob=0.5
     ):
 
-        super(ClsAL, self).__init__()
+        super(CLSAL, self).__init__()
 
         self.hidden_dim = hidden_dim
         self.n_layers = n_layers
@@ -114,7 +114,7 @@ torch.cuda.empty_cache()
 # TODO: 這裡換成這樣就好
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-model = ClsAL(args.vocab_size, args.emb_dim, args.hid_dim, 2, class_num)
+model = CLSAL(args.vocab_size, args.emb_dim, args.hid_dim, 2, class_num)
 model = model.to(device)
 print('agnews lstm model param num', get_n_params(model))
 T = Trainer(model, args.lr, train_loader=train_loader,

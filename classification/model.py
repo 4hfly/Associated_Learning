@@ -91,7 +91,7 @@ class ALComponent(nn.Module):
 
         self.x = x
         self.y = y
-        # print('x',self.x.shape, 'y', self.y.shape)
+
         if self.training:
 
             self._s = self.f(x)
@@ -150,7 +150,7 @@ class EmbeddingAL(ALComponent):
         if self.lin:
             g = nn.Sequential(
                 nn.Linear(num_embeddings[1], embedding_dim[1], bias=False),
-                nn.ELU()
+                nn.Tanh()
             )
         else:
             g = nn.Embedding(
@@ -158,7 +158,7 @@ class EmbeddingAL(ALComponent):
         # bridge function
         bx = nn.Sequential(
             nn.Linear(embedding_dim[0], embedding_dim[1], bias=False),
-            nn.ELU()
+            nn.Tanh()
         )
 
         by = None
@@ -171,12 +171,11 @@ class EmbeddingAL(ALComponent):
 
         dy = nn.Sequential(
             nn.Linear(embedding_dim[1], self.output_dim, bias=False),
-            nn.ELU()
+            nn.Tanh()
         )
         # loss function
-        cb = nn.MSELoss(reduction='mean')
-        ca = nn.MSELoss(reduction='mean')
-        # ca = nn.BCEWithLogitsLoss(reduction='sum')
+        cb = nn.MSELoss()
+        ca = nn.MSELoss()
 
         super(EmbeddingAL, self).__init__(
             f, g, bx, by, dx, dy, cb, ca, reverse=reverse)
@@ -198,9 +197,7 @@ class EmbeddingAL(ALComponent):
                 loss_d = self.criterion_ae(
                     self._t_prime, self.y.to(torch.float))
         else:
-            loss_b = self.criterion_br(self.by(q), p)
-            loss_d = self.criterion_ae(
-                self._s_prime.squeeze(1), self.x.to(torch.float))
+            raise Exception()
 
         return loss_b + loss_d
 
@@ -382,7 +379,8 @@ class TransformerEncoderAL(ALComponent):
         self,
         d_model: Tuple[int, int],
         nhead: int,
-        dim_feedforward: Tuple[int, int] = (2048, 512),
+        y_hidden: int,
+        dim_feedforward: int = 2048,
         dropout: float = 0.1,
         activation: str = "relu",
         layer_norm_eps: float = 1e-5,
@@ -391,20 +389,20 @@ class TransformerEncoderAL(ALComponent):
 
         # TODO: pytorch v1.9.0 有 layer_norm_eps, batch_first 兩個參數，v1.8.1 沒有。
         f = nn.TransformerEncoderLayer(
-            d_model[0], nhead, dim_feedforward=dim_feedforward[0], dropout=dropout, activation=activation)
+            d_model[0], nhead, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation, layer_norm_eps=layer_norm_eps, batch_first=batch_first)
         g = nn.Sequential(
-            nn.Linear(d_model[1], dim_feedforward[1], bias=False),
-            nn.ReLU6()
+            nn.Linear(d_model[1], y_hidden, bias=False),
+            nn.Tanh()
         )
         bx = nn.Sequential(
-            nn.Linear(dim_feedforward[0], dim_feedforward[1], bias=False),
-            nn.ReLU6()
+            nn.Linear(d_model[0], y_hidden, bias=False),
+            nn.Tanh()
         )
         by = None
         dx = None
         dy = nn.Sequential(
-            nn.Linear(dim_feedforward[1], d_model[1], bias=False),
-            nn.ReLU6()
+            nn.Linear(y_hidden, d_model[1], bias=False),
+            nn.Tanh()
         )
         cb = nn.MSELoss(reduction='mean')
         ca = nn.MSELoss(reduction='mean')
@@ -418,8 +416,8 @@ class TransformerEncoderAL(ALComponent):
 
     def loss(self):
 
-        # NOTE: 預設 batch_first = False。
-        p = self._s[-1, :, :]
+        # NOTE: v1.8.1 預設 batch_first = False。
+        p = self._s[:, -1, :]
         q = self._t
 
         if not self.reverse:
