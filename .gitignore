@@ -530,8 +530,7 @@ cython_debug/
 *.tfrecords
 .data/*
 .vector_cache/*
-data/wikitext-103-raw/
-data/wmt14/
+data/*
 lm/__pycache__/
 lm/data/pretrain
 lm/data/train

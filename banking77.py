@@ -1,37 +1,31 @@
 # -*- coding: utf-8 -*-
 # TODO: 有些沒用到的 lib 我之後會拿掉喔。
-from datasets import load_dataset
-import numpy as np
-import pandas as pd
-
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-import re
-import string
-from collections import Counter
-from nltk.corpus import stopwords
-stop_words = set(stopwords.words('english'))
-
-from sklearn.model_selection import train_test_split
+import argparse
 
 import torch
-from torch.utils.data import DataLoader, TensorDataset
 import torch.nn as nn
+from datasets import load_dataset
+from nltk.corpus import stopwords
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, TensorDataset
 
 from classification.model import EmbeddingAL, LSTMAL
 from utils import *
-import sys
 
-import argparse
+stop_words = set(stopwords.words('english'))
+
 
 parser = argparse.ArgumentParser('Banking77 Dataset for AL training')
 
 # model param
-parser.add_argument('--word-emb', type=int, help='word embedding dimension', default=300)
-parser.add_argument('--label-emb', type=int, help='label embedding dimension', default=128)
-parser.add_argument('--l1-dim', type=int, help='lstm1 hidden dimension', default=300)
-parser.add_argument('--bridge-dim', type=int, help='bridge function dimension', default=300)
+parser.add_argument('--word-emb', type=int,
+                    help='word embedding dimension', default=300)
+parser.add_argument('--label-emb', type=int,
+                    help='label embedding dimension', default=128)
+parser.add_argument('--l1-dim', type=int,
+                    help='lstm1 hidden dimension', default=300)
+parser.add_argument('--bridge-dim', type=int,
+                    help='bridge function dimension', default=300)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 parser.add_argument('--pretrain-emb', type=str, help='pretrained word embedding: glove or fasttest', default='none')
@@ -39,15 +33,14 @@ parser.add_argument('--pretrain-emb', type=str, help='pretrained word embedding:
 # training param
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
 parser.add_argument('--batch-size', type=int, help='batch-size', default=16)
-parser.add_argument('--one-hot-label', type=bool, help='if true then use one-hot vector as label input, else integer', default=True)
+parser.add_argument('--one-hot-label', type=bool,
+                    help='if true then use one-hot vector as label input, else integer', default=True)
 parser.add_argument('--epoch', type=int, default=50)
 
 # dir param
-parser.add_argument('--save-dir', type=str, default='ckpt/banking77.al.pt')
+parser.add_argument('--save-dir', type=str, default='data/ckpt/banking77.al.pt')
 
 args = parser.parse_args()
-
-
 
 bank_train = load_dataset('banking77', split='train')
 bank_test = load_dataset('banking77', split='test')
@@ -67,13 +60,14 @@ clean_train_id = convert2id(clean_train, vocab)
 clean_test_id = convert2id(clean_test, vocab)
 
 max_len = max([len(s) for s in clean_train_id])
-print('max seq length',max_len)
+print('max seq length', max_len)
 
 train_features = Padding(clean_train_id, max_len)
 test_features = Padding(clean_test_id, max_len)
 
 print('train label num', len(train_label))
-X_train, X_valid, y_train, y_valid = train_test_split(train_features, train_label, test_size=0.2, random_state=1)
+X_train, X_valid, y_train, y_valid = train_test_split(
+    train_features, train_label, test_size=0.2, random_state=1)
 X_test, y_test = test_features, test_label
 
 train_data = TensorDataset(torch.from_numpy(X_train), torch.stack(y_train))
@@ -97,25 +91,27 @@ class SentAL(nn.Module):
         self.layer_1 = l1
         self.layer_2 = l2
         self.dropout = nn.Dropout(0.1)
+
     def forward(self, x, y):
 
-        batch_size=x.size(0)
+        batch_size = x.size(0)
         direction = 2
 
         emb_x, emb_y, = self.embedding(x, y)
         emb_x, emb_y = self.dropout(emb_x), self.dropout(emb_y)
         # print(self.embedding._t_prime.shape, self.embedding.y.shape)
-        emb_loss = self.embedding.loss() 
+        emb_loss = self.embedding.loss()
 
-        layer_1_x, h1 , layer_1_y = self.layer_1(emb_x.detach(), emb_y.detach())
+        layer_1_x, h1, layer_1_y = self.layer_1(emb_x.detach(), emb_y.detach())
         layer_1_x, layer_1_y = self.dropout(layer_1_x), self.dropout(layer_1_y)
         layer_1_loss = self.layer_1.loss()
-        
-        h,c = h1
+
+        h, c = h1
         h = h.reshape(direction, batch_size, -1)
-        h1 = (h.detach(),c.detach())
-        
-        layer_2_x, h2, layer_2_y = self.layer_2(layer_1_x.detach(), layer_1_y.detach(), h1)
+        h1 = (h.detach(), c.detach())
+
+        layer_2_x, h2, layer_2_y = self.layer_2(
+            layer_1_x.detach(), layer_1_y.detach(), h1)
         layer_2_loss = self.layer_2.loss()
 
         return emb_loss, layer_1_loss, layer_2_loss
@@ -144,7 +140,8 @@ l2 = LSTMAL(2*args.l1_dim, args.l1_dim, (args.bridge_dim, args.bridge_dim), drop
 model = SentAL(emb, l1, l2)
 model = model.to(device)
 print('AL banking77 model param num', get_n_params(model))
-T = ALTrainer(model, args.lr, train_loader=train_loader, valid_loader=valid_loader, test_loader=test_loader, save_dir = args.save_dir)
+T = ALTrainer(model, args.lr, train_loader=train_loader,
+              valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
 T.run(epoch=args.epoch)
 T.eval()
 
