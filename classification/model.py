@@ -386,25 +386,29 @@ class TransformerEncoderAL(ALComponent):
         dropout: float = 0.1,
         activation: str = "relu",
         layer_norm_eps: float = 1e-5,
-        batch_first: bool = True
+        batch_first: bool = True,
+        act: nn.Module = None
     ) -> None:
+
+        if act == None:
+            act = nn.ELU()
 
         # TODO: pytorch v1.9.0 有 layer_norm_eps, batch_first 兩個參數，v1.8.1 沒有。
         f = nn.TransformerEncoderLayer(
             d_model[0], nhead, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation, layer_norm_eps=layer_norm_eps, batch_first=batch_first)
         g = nn.Sequential(
             nn.Linear(d_model[1], y_hidden, bias=False),
-            nn.Tanh()
+            act
         )
         bx = nn.Sequential(
             nn.Linear(d_model[0], y_hidden, bias=False),
-            nn.Tanh()
+            act
         )
         by = None
         dx = None
         dy = nn.Sequential(
             nn.Linear(y_hidden, d_model[1], bias=False),
-            nn.Tanh()
+            act
         )
         cb = nn.MSELoss(reduction='mean')
         ca = nn.MSELoss(reduction='mean')
