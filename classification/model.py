@@ -140,7 +140,7 @@ class EmbeddingAL(ALComponent):
 
         if pretrained is not None:
             f = nn.Embedding.from_pretrained(
-                pretrained.vectors, padding_idx=padding_idx)
+                pretrained, padding_idx=padding_idx) # freeze=False
         else:
             f = nn.Embedding(
                 num_embeddings[0], embedding_dim[0], padding_idx=padding_idx)
@@ -281,25 +281,19 @@ class LSTMAL(ALComponent):
         )
         g = nn.Sequential(
             nn.Linear(output_size, hidden_size[1], bias=False),
-            nn.ELU()
+            nn.Tanh()
         )
         # bridge function
         bx = nn.Sequential(
             nn.Linear(hidden_size[0] * self.d, hidden_size[1], bias=False),
-            nn.ELU()
+            nn.Tanh()
         )
         by = None
         dx = None
-        # by = nn.Sequential(
-        #     nn.Linear(hidden_size[1], hidden_size[0] * self.d),
-        #     nn.Sigmoid()
-        # )
-        # h function
-        # NOTE: dx
-        # dx = nn.LSTM(hidden_size[0] * self.d, input_size)
+
         dy = nn.Sequential(
             nn.Linear(hidden_size[1], output_size, bias=False),
-            nn.ELU()
+            nn.Tanh()
         )
         # loss function
         cb = nn.MSELoss(reduction='mean')

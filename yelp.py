@@ -17,9 +17,9 @@ parser = argparse.ArgumentParser('YelpFull Dataset for LSTM training')
 
 # model param
 parser.add_argument('--word-emb', type=int,
-                    help='word embedding dimension', default=300)
+                    help='word embedding dimension', default=280)
 parser.add_argument('--l1-dim', type=int,
-                    help='lstm1 hidden dimension', default=400)
+                    help='lstm1 hidden dimension', default=350)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 # training param

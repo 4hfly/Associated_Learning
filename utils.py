@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 import torchnlp
 from nltk.corpus import stopwords
+from torchnlp.word_to_vector import GloVe, FastText
 
 stop_words = set(stopwords.words('english'))
 
@@ -17,9 +18,9 @@ def get_word_vector(vocab, emb='glove'):
     # vocab is a dictionary {word: word_id}
     w = []
     if emb == 'glove':
-        vector = torchnlp.word_to_vector.Glove()
+        vector = GloVe(name='6B')
     elif emb == 'FastText' or emb == 'fasttext':
-        vector = torchnlp.word_to_vector.FastText()
+        vector = FastText()
 
     for word in vocab.keys():
         try:
@@ -435,6 +436,9 @@ class ALTrainer:
                                       labels.to(torch.float)).sum().item()
                     else:
                         predicted_label = self.model.embedding.dy(right)
+                        # print(predicted_label)
+                        # print(labels)
+                        # raise Exception
                         total_acc += (predicted_label.argmax(-1) ==
                                       labels.to(torch.float).argmax(-1)).sum().item()
 
@@ -499,7 +503,8 @@ class ALTrainer:
                     self.valid_acc_min, epoch_val_acc))
                 self.valid_acc_min = epoch_val_acc
             print(25*'==')
-
+        final_dp = self.save_dir[:-3] + 'last.pth'
+        torch.save(self.model.state_dict(), f'{final_dp}')
         print('best val acc', self.valid_acc_min)
 
     def eval(self):
@@ -542,6 +547,77 @@ class ALTrainer:
                 test_count += labels.size(0)
 
         print('Test acc', test_acc/test_count)
+
+    def short_cut_emb(self):
+    
+        self.model.eval()
+        # self.model.load_state_dict(torch.load(f'{self.save_dir}'))
+        model = self.model.to(self.device)
+
+        test_acc = 0
+        test_count = 0
+
+        for inputs, labels in self.test_loader:
+
+            with torch.no_grad():
+
+                model.embedding.eval()
+                model.layer_1.eval()
+                model.layer_2.eval()
+
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
+
+                right = model.short_cut_emb(inputs)
+
+                if self.label_num == 2:
+                    predicted_label = torch.round(
+                        model.embedding.dy(right).squeeze())
+                    test_acc += (predicted_label ==
+                                 labels.to(torch.float)).sum().item()
+                else:
+                    predicted_label = right.squeeze()
+                    test_acc += (predicted_label.argmax(-1) ==
+                                 labels.to(torch.float).argmax(-1)).sum().item()
+
+                test_count += labels.size(0)
+
+        print('Short cut emb Test acc', test_acc/test_count)
+
+
+    def short_cut_l1(self):
+        
+        self.model.eval()
+        # self.model.load_state_dict(torch.load(f'{self.save_dir}'))
+        model = self.model.to(self.device)
+
+        test_acc = 0
+        test_count = 0
+
+        for inputs, labels in self.test_loader:
+
+            with torch.no_grad():
+
+                model.embedding.eval()
+                model.layer_1.eval()
+                model.layer_2.eval()
+
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
+
+                right = model.short_cut_lstm(inputs)
+
+                if self.label_num == 2:
+                    predicted_label = torch.round(
+                        model.embedding.dy(right).squeeze())
+                    test_acc += (predicted_label ==
+                                 labels.to(torch.float)).sum().item()
+                else:
+                    predicted_label = right.squeeze()
+                    test_acc += (predicted_label.argmax(-1) ==
+                                 labels.to(torch.float).argmax(-1)).sum().item()
+
+                test_count += labels.size(0)
+
+        print('Short cut lstm Test acc', test_acc/test_count)
 
 
 class Trainer:
