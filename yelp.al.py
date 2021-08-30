@@ -34,6 +34,9 @@ parser.add_argument('--one-hot-label', type=bool,
 parser.add_argument('--epoch', type=int, default=20)
 parser.add_argument('--class-num', type=int, default=5)
 
+parser.add_argument('--act', type=str,
+                    default='tanh')
+
 # dir param
 parser.add_argument('--save-dir', type=str, default='ckpt/yelp_al.pt')
 

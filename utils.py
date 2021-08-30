@@ -13,6 +13,25 @@ from torchnlp.word_to_vector import GloVe, FastText
 
 stop_words = set(stopwords.words('english'))
 
+def get_act(args):
+    if args.act == 'tanh':
+        act = nn.Tanh()
+    elif args.act == 'sigmoid':
+        act = nn.Sigmoid()
+    elif args.act == 'relu':
+        act = nn.ReLU()
+    elif args.act == 'relu6':
+        act = nn.ReLU6()
+    elif args.act == 'leakyrelu':
+        act = nn.LeakyReLU()
+    elif args.act == 'elu':
+        act = nn.ELU()
+    elif args.act == 'gelu':
+        act = nn.GELU()
+    else:
+        act = None
+    return act
+
 
 def get_word_vector(vocab, emb='glove'):
     # vocab is a dictionary {word: word_id}
@@ -675,6 +694,7 @@ class Trainer:
                 self.opt.zero_grad()
                 output, h = self.model(inputs)
 
+                labels = labels.long()
                 loss = self.cri(output, labels)
                 loss.backward()
                 train_losses.append(loss.item())
@@ -691,7 +711,8 @@ class Trainer:
             self.model.eval()
             with torch.no_grad():
                 for inputs, labels in self.valid_loader:
-                    labels = torch.argmax(labels.long(), dim=1).float()
+                    # labels = torch.argmax(labels.long(), dim=1).float()
+                    labels = torch.argmax(labels.long(), dim=1)
                     inputs, labels = inputs.to(
                         self.device), labels.to(self.device)
                     output, val_h = self.model(inputs)
@@ -733,7 +754,8 @@ class Trainer:
         # iterate over test data
         for inputs, labels in self.test_loader:
 
-            labels = torch.argmax(labels.long(), dim=1).float()
+            # labels = torch.argmax(labels.long(), dim=1).float()
+            labels = torch.argmax(labels.long(), dim=1)
             inputs, labels = inputs.to(self.device), labels.to(self.device)
             output, test_h = self.model(inputs)
 

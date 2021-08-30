@@ -40,6 +40,9 @@ parser.add_argument('--epoch', type=int, default=50)
 parser.add_argument('--save-dir', type=str,
                     default='data/ckpt/banking77_al_trans.pt')
 
+parser.add_argument('--act', type=str,
+                    default='tanh')
+
 args = parser.parse_args()
 
 
@@ -109,15 +112,16 @@ class CLSAL(nn.Module):
 
         return emb_loss, layer_1_loss, layer_2_loss
 
+act = get_act(args)
 
 torch.cuda.empty_cache()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 emb = EmbeddingAL((args.vocab_size, 77), (args.word_emb,
-                                          args.label_emb), lin=args.one_hot_label)
+                                          args.label_emb), lin=args.one_hot_label, act=act)
 l1 = TransformerEncoderAL(
-    (args.word_emb, args.label_emb), args.nhead, args.l1_dim)
-l2 = TransformerEncoderAL((args.l1_dim, args.l1_dim), args.nhead, args.l2_dim)
+    (args.word_emb, args.label_emb), args.nhead, args.l1_dim, act=act)
+l2 = TransformerEncoderAL((args.l1_dim, args.l1_dim), args.nhead, args.l2_dim, act=act)
 model = CLSAL(emb, l1, l2)
 model = model.to(device)
 print('AL Transformer banking77 model param num', get_n_params(model))

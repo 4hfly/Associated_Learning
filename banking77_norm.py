@@ -30,6 +30,7 @@ parser = argparse.ArgumentParser('Banking77 Dataset for LSTM training')
 parser.add_argument('--emb-dim', type=int, help='word embedding dimension', default=300)
 parser.add_argument('--hid-dim', type=int, help='lstm1 hidden dimension', default=400)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
+parser.add_argument('--pretrain-emb', type=str, help='pretrained word embedding: glove or fasttest', default='none')
 
 # training param
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
@@ -85,7 +86,7 @@ class sentimentLSTM(nn.Module):
     The RNN model that will be used to perform Sentiment analysis.
     """
     
-    def __init__(self, vocab_size, embedding_dim, hidden_dim, n_layers, drop_prob=0.5, class_num=77):
+    def __init__(self, vocab_size, embedding_dim, hidden_dim, n_layers, drop_prob=0.5, class_num=77, pretrain=None):
         """
         Initialize the model by setting up the layers.
         """
@@ -94,7 +95,10 @@ class sentimentLSTM(nn.Module):
         self.hidden_dim = hidden_dim
         self.n_layers = n_layers
         # Embedding and LSTM layers
-        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        if pretrain == None:
+            self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        else:
+            self.embedding = nn.Embedding.from_pretrained(pretrain)
         self.lstm = nn.LSTM(embedding_dim, hidden_dim, n_layers, dropout=drop_prob, batch_first=True, bidirectional=True)
         # Dropout layer
         self.dropout = nn.Dropout(0.3)
@@ -118,6 +122,11 @@ class sentimentLSTM(nn.Module):
         out = self.fc(out)
         sig_out = self.softmax(out)
         return sig_out, hidden
+
+if args.pretrain_emb is not 'none':
+    pretrain = get_word_vector(vocab, args.pretrain_emb)
+else:
+    pretrain = None
 
 torch.cuda.empty_cache()
 
@@ -143,7 +152,7 @@ dist = [1/x for x in dist]
 dist = torch.tensor(dist)
 dist = F.normalize(dist,dim=0)
 
-model = sentimentLSTM(args.vocab_size, args.emb_dim, args.hid_dim, 2)
+model = sentimentLSTM(args.vocab_size, args.emb_dim, args.hid_dim, 2, pretrain=pretrain)
 model = model.to(device)
 print('LSTM banking77 model param num', get_n_params(model))
 T = Trainer(model, args.lr, train_loader=train_loader, valid_loader=valid_loader, test_loader=test_loader, save_dir = args.save_dir, loss_w=dist)

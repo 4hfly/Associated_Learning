@@ -37,6 +37,9 @@ parser.add_argument('--epoch', type=int, default=20)
 # dir param
 parser.add_argument('--save-dir', type=str, default='ckpt/agnews_al.pt')
 
+parser.add_argument('--act', type=str,
+                    default='tanh')
+
 args = parser.parse_args()
 
 
@@ -81,7 +84,6 @@ train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
 test_loader = DataLoader(test_data, shuffle=False, batch_size=batch_size)
 valid_loader = DataLoader(valid_data, shuffle=False, batch_size=batch_size)
 
-
 class CLSAL(nn.Module):
 
     def __init__(self, emb, l1, l2):
@@ -117,17 +119,18 @@ class CLSAL(nn.Module):
 
         return emb_loss, layer_1_loss, layer_2_loss
 
+act = get_act(args)
 
 torch.cuda.empty_cache()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 emb = EmbeddingAL((args.vocab_size, class_num), (args.word_emb,
-                                                 args.label_emb), lin=args.one_hot_label)
+                                                 args.label_emb), lin=args.one_hot_label, act=act)
 l1 = LSTMAL(args.word_emb, args.label_emb, (args.l1_dim,
-                                            args.l1_dim), dropout=0., bidirectional=True)
+                                            args.l1_dim), dropout=0., bidirectional=True, act=act)
 l2 = LSTMAL(2 * args.l1_dim, args.l1_dim, (args.l2_dim,
-                                           args.l2_dim), dropout=0., bidirectional=True)
+                                           args.l2_dim), dropout=0., bidirectional=True, act=act)
 model = CLSAL(emb, l1, l2)
 model = model.to(device)
 print('AL agnews model param num', get_n_params(model))

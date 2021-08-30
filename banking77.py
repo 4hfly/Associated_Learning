@@ -40,6 +40,9 @@ parser.add_argument('--epoch', type=int, default=50)
 # dir param
 parser.add_argument('--save-dir', type=str, default='data/ckpt/banking77.al.pt')
 
+parser.add_argument('--act', type=str,
+                    default='tanh')
+
 args = parser.parse_args()
 
 bank_train = load_dataset('banking77', split='train')
@@ -116,6 +119,7 @@ class SentAL(nn.Module):
 
         return emb_loss, layer_1_loss, layer_2_loss
 
+act = get_act(args)
 
 torch.cuda.empty_cache()
 
@@ -130,13 +134,13 @@ else:
     print("GPU not available, CPU used")
 
 if args.pretrain_emb == 'none':
-    emb = EmbeddingAL((args.vocab_size, 77), (args.bridge_dim, args.bridge_dim), lin=args.one_hot_label)
+    emb = EmbeddingAL((args.vocab_size, 77), (args.bridge_dim, args.bridge_dim), lin=args.one_hot_label, act=act)
 else:
     w = get_word_vector(vocab, emb=args.pretrain_emb)
-    emb = EmbeddingAL((args.vocab_size, 77), (args.bridge_dim, args.bridge_dim), lin=args.one_hot_label, pretrained=w)
+    emb = EmbeddingAL((args.vocab_size, 77), (args.bridge_dim, args.bridge_dim), lin=args.one_hot_label, pretrained=w,act=act)
     
-l1 = LSTMAL(args.l1_dim, args.l1_dim, (args.bridge_dim, args.bridge_dim), dropout=0, bidirectional=True)
-l2 = LSTMAL(2*args.l1_dim, args.l1_dim, (args.bridge_dim, args.bridge_dim), dropout=0, bidirectional=True)
+l1 = LSTMAL(args.l1_dim, args.l1_dim, (args.bridge_dim, args.bridge_dim), dropout=0, bidirectional=True, act=act)
+l2 = LSTMAL(2*args.l1_dim, args.l1_dim, (args.bridge_dim, args.bridge_dim), dropout=0, bidirectional=True, act=act)
 model = SentAL(emb, l1, l2)
 model = model.to(device)
 print('AL banking77 model param num', get_n_params(model))
