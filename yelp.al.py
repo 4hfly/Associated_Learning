@@ -175,9 +175,13 @@ l1 = LSTMAL(args.word_emb, args.label_emb, (args.l1_dim,
 l2 = LSTMAL(2 * args.l1_dim, args.l1_dim, (args.bridge_dim,
                                            args.bridge_dim), dropout=0, bidirectional=True)
 model = ClsAL(emb, l1, l2)
+model.load_state_dict(torch.load('ckpt/yelp_allast.pth'))
 model = model.to(device)
 print('AL Yelp full model param num', get_n_params(model))
 T = ALTrainer(model, args.lr, train_loader=train_loader,
               valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
-T.run(epoch=args.epoch)
-T.eval()
+# T.run(epoch=args.epoch)
+# T.eval()
+# T.model.load_state_dict(torch.load('ckpt/yelp_allast.pth'))
+T.short_cut_emb()
+T.short_cut_l1()

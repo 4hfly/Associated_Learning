@@ -34,6 +34,8 @@ parser.add_argument('--l1-dim', type=int, help='lstm1 hidden dimension', default
 parser.add_argument('--bridge-dim', type=int, help='bridge function dimension', default=300)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
+parser.add_argument('--pretrain-emb', type=str, help='pretrained word embedding: glove or fasttest', default='none')
+
 # training param
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
 parser.add_argument('--batch-size', type=int, help='batch-size', default=16)
@@ -131,7 +133,12 @@ else:
     device = torch.device("cpu")
     print("GPU not available, CPU used")
 
-emb = EmbeddingAL((args.vocab_size, 77), (args.bridge_dim, args.bridge_dim), lin=args.one_hot_label)
+if args.pretrain_emb == 'none':
+    emb = EmbeddingAL((args.vocab_size, 77), (args.bridge_dim, args.bridge_dim), lin=args.one_hot_label)
+else:
+    w = get_word_vector(vocab, emb=args.pretrain_emb)
+    emb = EmbeddingAL((args.vocab_size, 77), (args.bridge_dim, args.bridge_dim), lin=args.one_hot_label, pretrained=w)
+    
 l1 = LSTMAL(args.l1_dim, args.l1_dim, (args.bridge_dim, args.bridge_dim), dropout=0, bidirectional=True)
 l2 = LSTMAL(2*args.l1_dim, args.l1_dim, (args.bridge_dim, args.bridge_dim), dropout=0, bidirectional=True)
 model = SentAL(emb, l1, l2)
