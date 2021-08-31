@@ -2,13 +2,13 @@ from datasets import load_dataset
 import numpy as np
 import pandas as pd
 
-import matplotlib.pyplot as plt
-import seaborn as sns
-
 import re
 import string
 from collections import Counter
+import nltk
+nltk.download('stopwords')
 from nltk.corpus import stopwords
+
 stop_words = set(stopwords.words('english'))
 
 from sklearn.model_selection import train_test_split
@@ -34,7 +34,7 @@ parser.add_argument('--pretrain-emb', type=str, help='pretrained word embedding:
 
 # training param
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
-parser.add_argument('--batch-size', type=int, help='batch-size', default=16)
+parser.add_argument('--batch-size', type=int, help='batch-size', default=64)
 parser.add_argument('--epoch', type=int, default=50)
 
 # dir param
@@ -98,10 +98,10 @@ class sentimentLSTM(nn.Module):
         if pretrain == None:
             self.embedding = nn.Embedding(vocab_size, embedding_dim)
         else:
-            self.embedding = nn.Embedding.from_pretrained(pretrain)
+            self.embedding = nn.Embedding.from_pretrained(pretrain, freeze=False, padding_idx=0)
         self.lstm = nn.LSTM(embedding_dim, hidden_dim, n_layers, dropout=drop_prob, batch_first=True, bidirectional=True)
         # Dropout layer
-        self.dropout = nn.Dropout(0.3)
+        self.dropout = nn.Dropout(0.1)
         # Linear and sigmoid layers
         self.fc = nn.Sequential(
             nn.Linear(hidden_dim*2, 400),
