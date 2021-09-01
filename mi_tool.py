@@ -12,6 +12,16 @@ from scipy.stats import entropy
 from scipy.stats import norm
 from scipy.stats import binned_statistic
 
+def digamma(x):
+    count = 1
+    #Euler-Mascheroni constant
+    value = -0.57721566490153286060651209008240243104215933593992 
+    while count < int(x):
+        value += 1/float(count)
+        count += 1
+    return value
+
+
 def tfidf(corpus):
     '''
     corpus: list of strings
@@ -89,17 +99,73 @@ class MI_Vis:
         bin_y = np.mean(bin_y, axis=-1)
         
         mi = entropy(bin_x, bin_y, base=2)
-        print(mi)
+        print('bin',mi)
         
 
+import numpy as np
+from scipy.spatial.distance import squareform, pdist
 
+
+
+x = np.random.rand(256, 10)
+t=x
+# t = np.random.rand(256, 20)
+# x = np.ones((256,100))
+# t = np.ones((256,200))
+# x = x/2
+# print(x[0])
 M = MI_Vis()
-x = np.random.rand(4, 10)
-t = np.random.rand(4, 20)
+
+# i = pyMIestimator(x,t)
+# print('their implementation',i)
 
 # x = np.ones((256,100))
 # t = np.ones((256,200))
 
 mi = M.get_mi_yj(x,t)
-print(mi)
+print('my param method',mi)
 M.get_mi_bin(x,t, bins=30)
+
+import ee
+
+print((ee.mi(x,t))
+
+
+##Entropy
+def entropy(Y):
+    """
+    Also known as Shanon Entropy
+    Reference: https://en.wikipedia.org/wiki/Entropy_(information_theory)
+    """
+    unique, count = np.unique(Y, return_counts=True, axis=0)
+    prob = count/len(Y)
+    en = np.sum((-1)*prob*np.log2(prob))
+    return en
+
+
+#Joint Entropy
+def jEntropy(Y,X):
+    """
+    H(Y;X)
+    Reference: https://en.wikipedia.org/wiki/Joint_entropy
+    """
+    YX = np.c_[Y,X]
+    return entropy(YX)
+
+#Conditional Entropy
+def cEntropy(Y, X):
+    """
+    conditional entropy = Joint Entropy - Entropy of X
+    H(Y|X) = H(Y;X) - H(X)
+    Reference: https://en.wikipedia.org/wiki/Conditional_entropy
+    """
+    return jEntropy(Y, X) - entropy(X)
+
+
+#Information Gain
+def gain(Y, X):
+    """
+    Information Gain, I(Y;X) = H(Y) - H(Y|X)
+    Reference: https://en.wikipedia.org/wiki/Information_gain_in_decision_trees#Formal_definition
+    """
+    return entropy(Y) - cEntropy(Y,X)

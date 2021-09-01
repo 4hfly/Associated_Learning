@@ -36,6 +36,7 @@ parser.add_argument('--class-num', type=int, default=5)
 
 parser.add_argument('--act', type=str,
                     default='tanh')
+parser.add_argument('--pretrain-emb', type=str, default='glove')
 
 # dir param
 parser.add_argument('--save-dir', type=str, default='ckpt/yelp_al.pt')
@@ -165,26 +166,28 @@ class ClsAL(nn.Module):
         right = self.embedding.dy(right)
         return right
 
-
+act = get_act(args)
 
 torch.cuda.empty_cache()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-emb = EmbeddingAL((args.vocab_size, class_num), (args.word_emb,
-                                                 args.label_emb), lin=args.one_hot_label)
+if args.pretrain_emb == 'none': 
+    emb = EmbeddingAL((args.vocab_size, class_num), (args.word_emb,
+                                                    args.label_emb), lin=args.one_hot_label, act=act)
+else:
+    w = get_word_vector(vocab, emb=args.pretrain_emb)
+    emb = EmbeddingAL((args.vocab_size, class_num), (args.word_emb,
+                                                    args.label_emb), lin=args.one_hot_label, pretrained=w, act=act)
 l1 = LSTMAL(args.word_emb, args.label_emb, (args.l1_dim,
-                                            args.l1_dim), dropout=0, bidirectional=True)
+                                            args.l1_dim), dropout=0, bidirectional=True, act=act)
 l2 = LSTMAL(2 * args.l1_dim, args.l1_dim, (args.bridge_dim,
-                                           args.bridge_dim), dropout=0, bidirectional=True)
+                                           args.bridge_dim), dropout=0, bidirectional=True, act=act)
 model = ClsAL(emb, l1, l2)
-model.load_state_dict(torch.load('ckpt/yelp_allast.pth'))
 model = model.to(device)
 print('AL Yelp full model param num', get_n_params(model))
 T = ALTrainer(model, args.lr, train_loader=train_loader,
               valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
 T.run(epoch=args.epoch)
 T.eval()
-# T.model.load_state_dict(torch.load('ckpt/yelp_allast.pth'))
 T.short_cut_emb()
 T.short_cut_l1()
