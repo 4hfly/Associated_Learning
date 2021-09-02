@@ -28,11 +28,11 @@ parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 # training param
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
-parser.add_argument('--batch-size', type=int, help='batch-size', default=128)
+parser.add_argument('--batch-size', type=int, help='batch-size', default=64)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
-parser.add_argument('--epoch', type=int, default=20)
-parser.add_argument('--class-num', type=int, default=5)
+parser.add_argument('--epoch', type=int, default=50)
+parser.add_argument('--class-num', type=int, default=151)
 
 parser.add_argument('--act', type=str,
                     default='tanh')
@@ -44,63 +44,57 @@ parser.add_argument('--save-dir', type=str, default='ckpt/yelp_al.pt')
 args = parser.parse_args()
 
 
-news_train = load_dataset('yelp_review_full', split='train')
-new_test = load_dataset('yelp_review_full', split='test')
+dataset = load_dataset('clinc_oos', 'plus') # can use imbalanced, small, plus
+train_set = dataset['train']
+val_set = dataset['validation']
+test_set = dataset['test']
+print(len(train_set))
+# print(len(news_train['train']))
+# news_val = load_dataset('clinc_oos', 'imbalanced')
+# print(len(news_val['train']))
+# new_test = load_dataset('clinc_oos', 'small')
+# print(len(new_test['train']))
+
 
 class_num = args.class_num
 
-train_text = [b['text'] for b in news_train]
-train_label = multi_class_process([b['label'] for b in news_train], class_num)
+train_text = [b['text'] for b in train_set]
 
-test_text = [b['text'] for b in new_test]
-test_label = multi_class_process([b['label'] for b in new_test], class_num)
+train_label = [b['intent'] for b in train_set]
+
+train_label = multi_class_process([b['intent'] for b in train_set], class_num)
+
+val_text = [b['text'] for b in val_set]
+val_label = multi_class_process([b['intent'] for b in val_set], class_num)
+
+test_text = [b['text'] for b in test_set]
+test_label = multi_class_process([b['intent'] for b in test_set], class_num)
 
 clean_train = [data_preprocessing(t, True) for t in train_text]
-
-lst = []
-
-new_clean_train = []
-new_train_label=[]
-for i, c in enumerate(clean_train):
-    if len(c) == 0 or c == '' or c == "":
-        lst.append(i)
-    else:
-        new_clean_train.append(c)
-        new_train_label.append(train_label[i])
-clean_train = new_clean_train
-train_label=new_train_label
-
+clean_valid = [data_preprocessing(t, True) for t in val_text]
 clean_test = [data_preprocessing(t, True) for t in test_text]
-new_clean_test=[]
-new_test_label=[]
-for i, c in enumerate(clean_test):
-    if len(c) == 0 or c == '' or c == "":
-        lst.append(i)
-    else:
-        new_clean_test.append(c)
-        new_test_label.append(test_label[i])
-clean_test = new_clean_test
-test_label = new_test_label
+
 
 vocab = create_vocab(clean_train)
 
 clean_train_id = convert2id(clean_train, vocab)
+clean_valid_id = convert2id(clean_valid, vocab)
 clean_test_id = convert2id(clean_test, vocab)
 
 max_len = max([len(s) for s in clean_train_id])
 print('max seq length', max_len)
-max_len = 400
-train_features = Padding(clean_train_id, max_len)
-test_features = Padding(clean_test_id, max_len)
 
-X_train, X_valid, y_train, y_valid = train_test_split(
-    train_features, train_label, test_size=0.2, random_state=1)
+train_features = Padding(clean_train_id, max_len)
+valid_features = Padding(clean_valid_id, max_len)
+test_features = Padding(clean_test_id, max_len)
 
 print('dataset information:')
 print('=====================')
-print('train size', len(X_train))
-print('valid size', len(X_valid))
+print('train size', len(train_features))
+print('valid size', len(valid_features))
 print('test size', len(test_features))
+X_train, X_valid, y_train, y_valid = train_features, valid_features, 0,0 
+
 X_test, y_test = test_features, test_label
 
 train_data = TensorDataset(torch.from_numpy(X_train), torch.stack(y_train,dim=0))
@@ -188,7 +182,7 @@ l2 = LSTMAL(2 * args.l1_dim, args.l1_dim, (args.bridge_dim,
                                            args.bridge_dim), dropout=0, bidirectional=True, act=act)
 model = ClsAL(emb, l1, l2)
 model = model.to(device)
-print('AL Yelp full model param num', get_n_params(model))
+print('AL Clinic-OOS full model param num', get_n_params(model))
 T = ALTrainer(model, args.lr, train_loader=train_loader,
               valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
 T.run(epoch=args.epoch)
