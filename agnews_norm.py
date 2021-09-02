@@ -16,21 +16,23 @@ stop_words = set(stopwords.words('english'))
 parser = argparse.ArgumentParser('AGNews Dataset for AL training')
 
 # model param
-parser.add_argument('--emb_dim', type=int,
+parser.add_argument('--word-emb', type=int,
                     help='word embedding dimension', default=300)
-parser.add_argument('--hid-dim', type=int,
+parser.add_argument('--l1-dim', type=int,
                     help='lstm hidden dimension', default=400)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 # training param
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
-parser.add_argument('--batch-size', type=int, help='batch-size', default=16)
+parser.add_argument('--batch-size', type=int, help='batch-size', default=64)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
-parser.add_argument('--epoch', type=int, default=20)
+parser.add_argument('--epoch', type=int, default=40)
 
 # dir param
 parser.add_argument('--save-dir', type=str, default='ckpt/agnews.pt')
+parser.add_argument('--pretrain-emb', type=str, default='glove')
+parser.add_argument('--class-num', type=int, default=4)
 
 args = parser.parse_args()
 
@@ -61,7 +63,6 @@ print('max seq length', max_len)
 train_features = Padding(clean_train_id, max_len)
 test_features = Padding(clean_test_id, max_len)
 
-print('train label num', len(train_label))
 X_train, X_valid, y_train, y_valid = train_test_split(
     train_features, train_label, test_size=0.2, random_state=1)
 X_test, y_test = test_features, test_label
@@ -77,17 +78,20 @@ test_loader = DataLoader(test_data, shuffle=False, batch_size=batch_size)
 valid_loader = DataLoader(valid_data, shuffle=False, batch_size=batch_size)
 
 
-class CLSAL(nn.Module):
-
+class Cls(nn.Module):
+    
     def __init__(
-        self, vocab_size, embedding_dim, hidden_dim, n_layers, class_num, drop_prob=0.5
+        self, vocab_size, embedding_dim, hidden_dim, n_layers, class_num, drop_prob=0.5, pretrain=None
     ):
 
-        super(CLSAL, self).__init__()
+        super(Cls, self).__init__()
 
         self.hidden_dim = hidden_dim
         self.n_layers = n_layers
-        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        if pretrain == None:
+            self.embedding = nn.Embedding.from_pretrain(pretrain, freeze=False, padding_idx=0)
+        else:
+            self.embedding = nn.Embedding(vocab_size, embedding_dim)
         self.lstm = nn.LSTM(embedding_dim, hidden_dim, n_layers,
                             dropout=drop_prob, batch_first=True, bidirectional=True)
         self.dropout = nn.Dropout(0.1)
@@ -113,8 +117,14 @@ torch.cuda.empty_cache()
 
 # TODO: 這裡換成這樣就好
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print('current using device:', device)
 
-model = CLSAL(args.vocab_size, args.emb_dim, args.hid_dim, 2, class_num)
+if args.pretrain_emb == 'none': 
+    model = Cls(args.vocab_size, args.word_emb, args.l1_dim, 2, args.class_num)
+else:
+    w = get_word_vector(vocab, emb=args.pretrain_emb)
+    model = Cls(args.vocab_size, args.word_emb, args.l1_dim, 2, args.class_num, pretrain=w)
+
 model = model.to(device)
 print('agnews lstm model param num', get_n_params(model))
 T = Trainer(model, args.lr, train_loader=train_loader,
