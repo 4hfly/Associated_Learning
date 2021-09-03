@@ -10,6 +10,7 @@ import torch.nn as nn
 import torchnlp
 from nltk.corpus import stopwords
 from torchnlp.word_to_vector import GloVe, FastText
+from vis import tsne
 
 stop_words = set(stopwords.words('english'))
 
@@ -113,6 +114,17 @@ def multi_class_process(labels, label_num):
         hot_vecs.append(b)
     return hot_vecs
 
+def multi_doubleclass_process(labels, label_num):
+    '''
+    this function will convert multi-label lists into one-hot vector or n-hot vector
+    '''
+    hot_vecs = []
+    for l in labels:
+        b = torch.zeros(label_num*2)
+        b[l] = 1
+        b[l+label_num] = 1
+        hot_vecs.append(b)
+    return hot_vecs
 
 def multi_label_process(labels, label_num):
     '''
@@ -367,7 +379,7 @@ class TransfomerTrainer:
 class ALTrainer:
 
     def __init__(
-        self, model, lr, train_loader, valid_loader, test_loader, save_dir, label_num=None
+        self, model, lr, train_loader, valid_loader, test_loader, save_dir, label_num=None, double=False, class_num=None
     ):
 
         # Still need a arg parser to pass arguments
@@ -384,6 +396,11 @@ class ALTrainer:
         self.valid_loader = valid_loader
         self.test_loader = test_loader
         self.save_dir = save_dir
+        self.double = double
+        self.class_num = class_num
+
+        if self.double:
+            assert type(self.class_num) == int # this is for double label
 
         is_cuda = torch.cuda.is_available()
 
@@ -457,7 +474,15 @@ class ALTrainer:
                         total_acc += (predicted_label ==
                                       labels.to(torch.float)).sum().item()
                     else:
-                        predicted_label = self.model.embedding.dy(right)
+                        if self.double is False:
+                            predicted_label = self.model.embedding.dy(right)
+                        else:
+                            out = self.model.embedding.dy(right)
+                            predicted_label = out[:, :self.class_num] + out[:, self.class_num:]
+                            labels = labels[:, :self.class_num] + labels[:, self.class_num:]
+                        # print(predicted_label)
+                        # print(labels)
+                        # raise Exception
                         total_acc += (predicted_label.argmax(-1) ==
                                       labels.to(torch.float).argmax(-1)).sum().item()
 
@@ -498,8 +523,13 @@ class ALTrainer:
                         val_acc += (predicted_label ==
                                     labels.to(torch.float)).sum().item()
                     else:
-                        predicted_label = self.model.embedding.dy(
-                            right).squeeze()
+                        if self.double is False:
+                            predicted_label = self.model.embedding.dy(right)
+                        else:
+                            out = self.model.embedding.dy(right)
+                            predicted_label = out[:, :self.class_num] + out[:, self.class_num:]
+                            labels = labels[:, :self.class_num] + labels[:, self.class_num:]
+
                         val_acc += (predicted_label.argmax(-1) ==
                                     labels.to(torch.float).argmax(-1)).sum().item()
 
@@ -559,7 +589,13 @@ class ALTrainer:
                     test_acc += (predicted_label ==
                                  labels.to(torch.float)).sum().item()
                 else:
-                    predicted_label = model.embedding.dy(right).squeeze()
+                    if self.double is False:
+                        predicted_label = self.model.embedding.dy(right)
+                    else:
+                        out = self.model.embedding.dy(right)
+                        predicted_label = out[:, :self.class_num] + out[:, self.class_num:]
+                        labels = labels[:, :self.class_num] + labels[:, self.class_num:]
+
                     test_acc += (predicted_label.argmax(-1) ==
                                  labels.to(torch.float).argmax(-1)).sum().item()
 
@@ -637,6 +673,37 @@ class ALTrainer:
 
         print('Short cut lstm Test acc', test_acc/test_count)
 
+    def tsne(self):
+
+        self.model.eval()
+        self.model.load_state_dict(torch.load(f'{self.save_dir}'))
+        model = self.model.to(self.device)
+        all_feats = []
+        all_labels = []
+        class_num=0
+        for inputs, labels in self.test_loader:
+
+            with torch.no_grad():
+
+                model.embedding.eval()
+                model.layer_1.eval()
+                model.layer_2.eval()
+
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
+
+                left = model.embedding.f(inputs)
+                output, hidden = model.layer_1.f(left)
+                left, (output, c) = model.layer_2.f(output, hidden)
+                left = left[:, -1, :]
+                class_num = labels.size(-1)
+                # left = left.reshape(left.size(1), -1)
+                right = model.layer_2.bx(left)
+                for i in range(right.size(0)):
+                    all_feats.append(right[i,:].numpy())
+                    all_labels.append(labels[i,:].argmax(-1).item())
+        tsne_plot_dir = self.save_dir[:-2]+'al.tsne.png'
+        tsne(all_feats, all_labels, class_num, tsne_plot_dir)
+        print('tsne saved in ',tsne_plot_dir)
 
 class Trainer:
 
@@ -777,3 +844,27 @@ class Trainer:
 
         test_acc = num_correct/test_count
         print("Test accuracy: {:.3f}".format(test_acc))
+
+    def tsne(self):
+
+        self.model.eval()
+        self.model.load_state_dict(torch.load(f'{self.save_dir}'))
+        model = self.model.to(self.device)
+        all_feats = []
+        all_labels = []
+        class_num=0
+        for inputs, labels in self.test_loader:
+
+            with torch.no_grad():
+
+                embeds = self.model.embedding(x)
+                lstm_out, hidden = self.model.lstm(embeds)
+                right = lstm_out[:, -1, :]
+
+                for i in range(right.size(0)):
+                    all_feats.append(right[i,:].numpy())
+                    all_labels.append(labels[i,:].argmax(-1).item())
+
+        tsne_plot_dir = self.save_dir[:-2]+'lstm.tsne.png'
+        tsne(all_feats, all_labels, class_num, tsne_plot_dir)
+        print('tsne saved in ',tsne_plot_dir)

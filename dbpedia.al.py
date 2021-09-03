@@ -38,6 +38,7 @@ parser.add_argument('--act', type=str,
                     default='tanh')
 parser.add_argument('--pretrain-emb', type=str, default='glove')
 
+parser.add_argument('--max-len', type=int, default=400)
 # dir param
 parser.add_argument('--save-dir', type=str, default='ckpt/dbpedia.al.pt')
 
@@ -64,6 +65,7 @@ clean_test_id = convert2id(clean_test, vocab)
 
 max_len = max([len(s) for s in clean_train_id])
 print('max seq length', max_len)
+max_len = args.max_len
 
 train_features = Padding(clean_train_id, max_len)
 test_features = Padding(clean_test_id, max_len)
@@ -77,7 +79,7 @@ print('=====================')
 print('train size', len(X_train))
 print('valid size', len(X_valid))
 print('test size', len(test_features))
-
+print('=====================')
 X_test, y_test = test_features, test_label
 
 train_data = TensorDataset(torch.from_numpy(X_train), torch.stack(y_train,dim=0))
