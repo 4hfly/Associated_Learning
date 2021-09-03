@@ -8,23 +8,18 @@ from nltk.corpus import stopwords
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
 
-from classification.model import LSTMAL, EmbeddingAL
 from utils import *
 
 stop_words = set(stopwords.words('english'))
 
 
-parser = argparse.ArgumentParser('AGNews Dataset for AL training')
+parser = argparse.ArgumentParser('AGNews Dataset for Transformer training')
 
 # model param
-parser.add_argument('--word-emb', type=int,
+parser.add_argument('--emb_dim', type=int,
                     help='word embedding dimension', default=300)
-parser.add_argument('--label-emb', type=int,
-                    help='label embedding dimension', default=128)
-parser.add_argument('--l1-dim', type=int,
-                    help='layer 1 hidden dimension', default=300)
-parser.add_argument('--l2-dim', type=int,
-                    help='layer 2 hidden dimension', default=300)
+parser.add_argument('--hid-dim', type=int,
+                    help='lstm hidden dimension', default=400)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 # training param
@@ -35,10 +30,8 @@ parser.add_argument('--one-hot-label', type=bool,
 parser.add_argument('--epoch', type=int, default=20)
 
 # dir param
-parser.add_argument('--save-dir', type=str, default='ckpt/agnews_al.pt')
-
-parser.add_argument('--act', type=str,
-                    default='tanh')
+parser.add_argument('--save-dir', type=str,
+                    default='data/ckpt/agnews_transformer.pt')
 
 args = parser.parse_args()
 
@@ -84,57 +77,60 @@ train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
 test_loader = DataLoader(test_data, shuffle=False, batch_size=batch_size)
 valid_loader = DataLoader(valid_data, shuffle=False, batch_size=batch_size)
 
-class CLSAL(nn.Module):
 
-    def __init__(self, emb, l1, l2):
+class TransformerForCLS(nn.Module):
 
-        super(CLSAL, self).__init__()
+    def __init__(
+        self, vocab_size, embedding_dim, hidden_dim, nhead, nlayers, class_num, dropout=0.5
+    ):
 
-        self.embedding = emb
-        self.layer_1 = l1
-        self.layer_2 = l2
-        self.dropout = nn.Dropout(0.1)
+        super(TransformerForCLS, self).__init__()
 
-    def forward(self, x, y):
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        layers = nn.TransformerEncoderLayer(
+            embedding_dim, nhead, hidden_dim, dropout)
+        self.encoder = nn.TransformerEncoder(layers, nlayers)
+        self.mask = None
+        self.fc = nn.Linear(embedding_dim, class_num)
+        self.softmax = nn.Softmax(dim=-1)
 
-        batch_size = x.size(0)
-        direction = 2
+    def forward(self, x, mask=None):
 
-        emb_x, emb_y, = self.embedding(x, y)
-        emb_x, emb_y = self.dropout(emb_x), self.dropout(emb_y)
-        # print(self.embedding._t_prime.shape, self.embedding.y.shape)
-        emb_loss = self.embedding.loss()
+        # if mask == None:
+        #     device = x.device
+        #     if self.mask == None:
+        #         mask = self._generate_square_subsequent_mask(x).to(device)
+        #         self.mask = mask
+        # else:
+        #     self.mask = mask
 
-        layer_1_x, h1, layer_1_y = self.layer_1(emb_x.detach(), emb_y.detach())
-        layer_1_x, layer_1_y = self.dropout(layer_1_x), self.dropout(layer_1_y)
-        layer_1_loss = self.layer_1.loss()
+        x = self.embedding(x)
+        output = self.encoder(x, self.mask).mean(dim=1)
+        output = self.fc(output)
 
-        h, c = h1
-        h = h.reshape(direction, batch_size, -1)
-        h1 = (h.detach(), c.detach())
+        return self.softmax(output)
 
-        layer_2_x, h2, layer_2_y = self.layer_2(
-            layer_1_x.detach(), layer_1_y.detach(), h1)
-        layer_2_loss = self.layer_2.loss()
+    def _generate_square_subsequent_mask(self, sz: int):
+        """Generate a square mask for the sequence. The masked positions are filled with float('-inf').
+            Unmasked positions are filled with float(0.0).
+        """
+        mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
+        mask = mask.float().masked_fill(mask == 0, float(
+            '-inf')).masked_fill(mask == 1, float(0.0))
+        return mask
 
-        return emb_loss, layer_1_loss, layer_2_loss
-
-act = get_act(args)
 
 torch.cuda.empty_cache()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-emb = EmbeddingAL((args.vocab_size, class_num), (args.word_emb,
-                                                 args.label_emb), lin=args.one_hot_label, act=act)
-l1 = LSTMAL(args.word_emb, args.label_emb, (args.l1_dim,
-                                            args.l1_dim), dropout=0., bidirectional=True, act=act)
-l2 = LSTMAL(2 * args.l1_dim, args.l1_dim, (args.l2_dim,
-                                           args.l2_dim), dropout=0., bidirectional=True, act=act)
-model = CLSAL(emb, l1, l2)
+nhead = 6
+nlayers = 6
+model = TransformerForCLS(args.vocab_size, args.emb_dim, args.hid_dim,
+                          nhead, nlayers, class_num)
 model = model.to(device)
-print('AL agnews model param num', get_n_params(model))
-T = ALTrainer(model, args.lr, train_loader=train_loader,
-              valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
-T.run(epoch=args.epoch)
+print('Transformer agnews model param num', get_n_params(model))
+T = Trainer(model, args.lr, train_loader=train_loader,
+            valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir, is_rnn=False)
+T.run(epochs=args.epoch)
 T.eval()
