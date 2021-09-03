@@ -6,7 +6,6 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 import torch.nn.functional as F
-# from torchtext.vocab import Vectors
 
 CONFIG = {
     "hidden_size": (128, 128),
@@ -143,13 +142,11 @@ class EmbeddingAL(ALComponent):
 
         if pretrained is not None:
             f = nn.Embedding.from_pretrained(
-                pretrained, padding_idx=padding_idx, freeze=False) # freeze=False
+                pretrained, padding_idx=padding_idx, freeze=False)
         else:
             f = nn.Embedding(
                 num_embeddings[0], embedding_dim[0], padding_idx=padding_idx)
         self.lin = lin
-        print(self.lin)
-        # TODO:
         if self.lin:
             g = nn.Sequential(
                 nn.Linear(num_embeddings[1], embedding_dim[1], bias=False),
@@ -425,8 +422,11 @@ class TransformerEncoderAL(ALComponent):
     def loss(self):
 
         # NOTE: v1.8.1 預設 batch_first = False。
-        p = self._s[:, -1, :]
+        p = self._s
         q = self._t
+
+        p_nonzero = (p != 0.).sum(dim=1)
+        p = p.sum(dim=1) / p_nonzero
 
         if not self.reverse:
             loss_b = self.criterion_br(self.bx(p), q)

@@ -16,6 +16,7 @@ import wandb
 
 stop_words = set(stopwords.words('english'))
 
+
 def get_act(args):
     if args.act == 'tanh':
         act = nn.Tanh()
@@ -129,7 +130,6 @@ def multi_doubleclass_process(labels, label_num):
 
 def multi_label_process(labels, label_num):
     '''
-    TODO: 這個是多出來的？
     multi-label用的
     this function will convert multi-label lists into one-hot vector or n-hot vector
     '''
@@ -175,7 +175,7 @@ def Padding(review_int, seq_len):
 
 
 class TransfomerTrainer:
-    
+
     def __init__(
         self, model, lr, train_loader, valid_loader, test_loader, save_dir, label_num=None
     ):
@@ -268,6 +268,9 @@ class TransfomerTrainer:
                                       labels.to(torch.float)).sum().item()
                     else:
                         predicted_label = self.model.embedding.dy(right)
+                        # NOTE: testing function.
+                        # print(predicted_label.argmax(1))
+                        # print(labels.to(torch.float).argmax(-1))
                         total_acc += (predicted_label.argmax(-1) ==
                                       labels.to(torch.float).argmax(-1)).sum().item()
 
@@ -620,7 +623,7 @@ class ALTrainer:
         print('Test acc', test_acc/test_count)
 
     def short_cut_emb(self):
-    
+
         self.model.eval()
         # self.model.load_state_dict(torch.load(f'{self.save_dir}'))
         model = self.model.to(self.device)
@@ -654,9 +657,8 @@ class ALTrainer:
 
         print('Short cut emb Test acc', test_acc/test_count)
 
-
     def short_cut_l1(self):
-        
+
         self.model.eval()
         # self.model.load_state_dict(torch.load(f'{self.save_dir}'))
         model = self.model.to(self.device)
@@ -725,7 +727,7 @@ class ALTrainer:
 class Trainer:
 
     def __init__(
-        self, model, lr, train_loader, valid_loader, test_loader, save_dir, label_num=None, loss_w=None
+        self, model, lr, train_loader, valid_loader, test_loader, save_dir, label_num=None, loss_w=None, is_rnn=True
     ):
 
         # Still need a arg parser to pass arguments
@@ -745,8 +747,9 @@ class Trainer:
         if loss_w is not None:
             self.cri = nn.CrossEntropyLoss(weight=loss_w.cuda())
         else:
-            self.cri = nn.CrossEntropyLoss()
+            self.cri = nn.CrossEntropyLoss(ignore_index=0)
         self.clip = 5
+        self.is_rnn = is_rnn
         is_cuda = torch.cuda.is_available()
 
         if is_cuda:
@@ -771,13 +774,14 @@ class Trainer:
             for inputs, labels in self.train_loader:
 
                 # NOTE: 吃 class 的 index，所以用 argmax。
-                labels = torch.argmax(labels.long(), dim=1).float()
+                labels = torch.argmax(labels.long(), dim=1)
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
 
                 self.opt.zero_grad()
-                output, h = self.model(inputs)
-
-                labels = labels.long()
+                if self.is_rnn:
+                    output, h = self.model(inputs)
+                else:
+                    output = self.model(inputs)
                 loss = self.cri(output, labels)
                 loss.backward()
                 train_losses.append(loss.item())
@@ -794,11 +798,14 @@ class Trainer:
             self.model.eval()
             with torch.no_grad():
                 for inputs, labels in self.valid_loader:
-                    # labels = torch.argmax(labels.long(), dim=1).float()
+
                     labels = torch.argmax(labels.long(), dim=1)
                     inputs, labels = inputs.to(
                         self.device), labels.to(self.device)
-                    output, val_h = self.model(inputs)
+                    if self.is_rnn:
+                        output, val_h = self.model(inputs)
+                    else:
+                        output = self.model(inputs)
                     val_loss = self.cri(output, labels)
                     val_losses.append(val_loss.item())
                     # accuracy = acc(output,labels)
@@ -837,11 +844,12 @@ class Trainer:
         # iterate over test data
         for inputs, labels in self.test_loader:
 
-            # labels = torch.argmax(labels.long(), dim=1).float()
             labels = torch.argmax(labels.long(), dim=1)
             inputs, labels = inputs.to(self.device), labels.to(self.device)
-            output, test_h = self.model(inputs)
-
+            if self.is_rnn:
+                output, test_h = self.model(inputs)
+            else:
+                output = self.model(inputs)
             # calculate loss
             test_loss = self.cri(output, labels)
             test_losses.append(test_loss.item())
