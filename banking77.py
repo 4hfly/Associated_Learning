@@ -28,17 +28,17 @@ parser.add_argument('--bridge-dim', type=int,
                     help='bridge function dimension', default=300)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
-parser.add_argument('--pretrain-emb', type=str, help='pretrained word embedding: glove or fasttest', default='none')
+parser.add_argument('--pretrain-emb', type=str, help='pretrained word embedding: glove or fasttest', default='glove')
 
 # training param
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
-parser.add_argument('--batch-size', type=int, help='batch-size', default=16)
+parser.add_argument('--batch-size', type=int, help='batch-size', default=64)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
-parser.add_argument('--epoch', type=int, default=50)
+parser.add_argument('--epoch', type=int, default=500)
 
 # dir param
-parser.add_argument('--save-dir', type=str, default='data/ckpt/banking77.al.pt')
+parser.add_argument('--save-dir', type=str, default='ckpt/banking77.al.pt')
 
 parser.add_argument('--act', type=str,
                     default='tanh')
@@ -86,6 +86,8 @@ valid_loader = DataLoader(valid_data, shuffle=False, batch_size=batch_size)
 dataiter = iter(train_loader)
 sample_x, sample_y = dataiter.next()
 
+import warnings
+warnings.simplefilter("ignore")
 
 class SentAL(nn.Module):
     def __init__(self, emb, l1, l2):

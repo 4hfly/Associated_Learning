@@ -19,7 +19,6 @@ CONFIG = {
     "embedding_dim": (300, 128)
 }
 
-
 class CLS(nn.Module):
     def __init__(self, vocab_size, emb_dim, hid_dim, emb=None):
 
@@ -202,7 +201,8 @@ class EmbeddingAL(ALComponent):
                     self._t_prime, self.y.to(torch.float))
         else:
             raise Exception()
-
+        self.loss_b = loss_b.item()
+        self.loss_d = loss_d.item()
         return loss_b + loss_d
 
 
@@ -372,6 +372,8 @@ class LSTMAL(ALComponent):
         else:
             raise Exception()
 
+        self.loss_b = loss_b.item()
+        self.loss_d = loss_d.item()
         return loss_b + loss_d
 
 

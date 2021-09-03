@@ -12,6 +12,8 @@ from nltk.corpus import stopwords
 from torchnlp.word_to_vector import GloVe, FastText
 from vis import tsne
 
+import wandb
+
 stop_words = set(stopwords.words('english'))
 
 def get_act(args):
@@ -383,7 +385,13 @@ class ALTrainer:
         # TODO: 我覺得這種外部控制的參數，用全域 CONFIG 之類的定義就好，
         # 傳參反而有點麻煩，而且 trace 會比較困難。
 
+
         self.model = model
+        project_name = save_dir.replace('/', '-')
+        wandb.init(project=project_name, entity='hibb')
+        config = wandb.config
+        wandb.watch(self.model)
+
         self.opt = torch.optim.Adam(self.model.parameters(), lr=lr)
         # self.opt = torch.optim.SGD(self.model.parameters(), lr=0.1, momentum=0.9)
         self.label_num = label_num
@@ -435,8 +443,19 @@ class ALTrainer:
                 self.opt.zero_grad()
 
                 emb_loss, l1_loss, l2_loss = self.model(inputs, labels)
+                
+                wandb.log({"emb loss": emb_loss.item()})
+                wandb.log({"lstm1 loss": l1_loss.item()})
+                wandb.log({"lstm2 loss": l2_loss.item()})
+                wandb.log({"emb bridge loss": self.model.embedding.loss_b})
+                wandb.log({"emb decode loss": self.model.embedding.loss_d})
+                wandb.log({"lstm1 bridge loss": self.model.layer_1.loss_b})
+                wandb.log({"lstm1 decode loss": self.model.layer_1.loss_d})
+                wandb.log({"lstm2 bridge loss": self.model.layer_2.loss_b})
+                wandb.log({"lstm2 decode loss": self.model.layer_2.loss_d})
 
                 loss = emb_loss + l1_loss + l2_loss
+                wandb.log({"total loss": loss.item()})
                 loss.backward()
 
                 nn.utils.clip_grad_norm_(

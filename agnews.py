@@ -11,6 +11,9 @@ from torch.utils.data import DataLoader, TensorDataset
 from classification.model import LSTMAL, EmbeddingAL
 from utils import *
 
+import warnings
+warnings.simplefilter("ignore")
+
 stop_words = set(stopwords.words('english'))
 
 
