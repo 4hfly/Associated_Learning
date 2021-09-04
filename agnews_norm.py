@@ -24,10 +24,10 @@ parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 # training param
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
-parser.add_argument('--batch-size', type=int, help='batch-size', default=64)
+parser.add_argument('--batch-size', type=int, help='batch-size', default=32)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
-parser.add_argument('--epoch', type=int, default=40)
+parser.add_argument('--epoch', type=int, default=20)
 
 # dir param
 parser.add_argument('--save-dir', type=str, default='ckpt/agnews.pt')

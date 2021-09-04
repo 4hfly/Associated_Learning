@@ -11,6 +11,10 @@ from torch.utils.data import DataLoader, TensorDataset
 from classification.model import LSTMAL, EmbeddingAL
 from utils import *
 
+import os
+
+os.environ["WANDB_SILENT"] = "true"
+
 stop_words = set(stopwords.words('english'))
 
 parser = argparse.ArgumentParser('YelpFull Dataset for AL training')
@@ -28,10 +32,10 @@ parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 # training param
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
-parser.add_argument('--batch-size', type=int, help='batch-size', default=128)
+parser.add_argument('--batch-size', type=int, help='batch-size', default=64)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
-parser.add_argument('--epoch', type=int, default=20)
+parser.add_argument('--epoch', type=int, default=40)
 parser.add_argument('--class-num', type=int, default=5)
 
 parser.add_argument('--act', type=str,
@@ -101,6 +105,7 @@ print('=====================')
 print('train size', len(X_train))
 print('valid size', len(X_valid))
 print('test size', len(test_features))
+print('=====================\n')
 X_test, y_test = test_features, test_label
 
 train_data = TensorDataset(torch.from_numpy(X_train), torch.stack(y_train,dim=0))

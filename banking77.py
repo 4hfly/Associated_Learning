@@ -14,6 +14,8 @@ from utils import *
 
 stop_words = set(stopwords.words('english'))
 
+import os
+os.environ["WANDB_SILENT"] = "true"
 
 parser = argparse.ArgumentParser('Banking77 Dataset for AL training')
 

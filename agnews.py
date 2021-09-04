@@ -10,10 +10,10 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from classification.model import LSTMAL, EmbeddingAL
 from utils import *
-
+import os
 import warnings
 warnings.simplefilter("ignore")
-
+os.environ["WANDB_SILENT"] = "true"
 stop_words = set(stopwords.words('english'))
 
 

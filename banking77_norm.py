@@ -30,12 +30,14 @@ parser = argparse.ArgumentParser('Banking77 Dataset for LSTM training')
 parser.add_argument('--emb-dim', type=int, help='word embedding dimension', default=300)
 parser.add_argument('--hid-dim', type=int, help='lstm1 hidden dimension', default=400)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
-parser.add_argument('--pretrain-emb', type=str, help='pretrained word embedding: glove or fasttest', default='none')
+parser.add_argument('--pretrain-emb', type=str, help='pretrained word embedding: glove or fasttest', default='glove')
 
 # training param
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
 parser.add_argument('--batch-size', type=int, help='batch-size', default=64)
-parser.add_argument('--epoch', type=int, default=50)
+parser.add_argument('--epoch', type=int, default=500)
+
+# parser.add_argument('--pretrain-emb', type=str, default='glove')
 
 # dir param
 parser.add_argument('--save-dir', type=str, default='ckpt/banking77.pt')

@@ -173,6 +173,25 @@ def Padding(review_int, seq_len):
 
     return features
 
+def PadTransformer(review_int, seq_len):
+    '''
+    Return features of review_ints, where each review is padded with 0's or truncated to the input seq_length.
+    '''
+    masks = np.zeros((len(review_int), seq_len), dtype=bool)
+    features = np.zeros((len(review_int), seq_len), dtype=int)
+    for i, review in enumerate(review_int):
+        if len(review) <= seq_len:
+            zeros = list(np.zeros(seq_len - len(review)))
+            new = zeros + review
+            # new_mask =  np.concatenate((np.ones(seq_len-len(review), dtype=bool), np.zeros(len(review), dtype=bool), axis=0)
+        else:
+            new = review[: seq_len]
+            new_mask = np.zeros(seq_len, dtype=bool)
+        features[i, :] = np.array(new)
+        masks[i,:] = new_mask
+    return features, masks
+    # return features
+
 
 class TransfomerTrainer:
 
@@ -747,7 +766,7 @@ class Trainer:
         if loss_w is not None:
             self.cri = nn.CrossEntropyLoss(weight=loss_w.cuda())
         else:
-            self.cri = nn.CrossEntropyLoss(ignore_index=0)
+            self.cri = nn.CrossEntropyLoss()
         self.clip = 5
         self.is_rnn = is_rnn
         is_cuda = torch.cuda.is_available()
