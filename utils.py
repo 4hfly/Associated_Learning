@@ -183,7 +183,9 @@ def PadTransformer(review_int, seq_len):
         if len(review) <= seq_len:
             zeros = list(np.zeros(seq_len - len(review)))
             new = zeros + review
-            # new_mask =  np.concatenate((np.ones(seq_len-len(review), dtype=bool), np.zeros(len(review), dtype=bool), axis=0)
+            p1 = np.ones(seq_len-len(review), dtype=bool)
+            p2 = np.zeros(len(review), dtype=bool)
+            new_mask =  np.concatenate((p1, p2), axis=0)
         else:
             new = review[: seq_len]
             new_mask = np.zeros(seq_len, dtype=bool)

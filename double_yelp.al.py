@@ -39,7 +39,7 @@ parser.add_argument('--act', type=str,
 parser.add_argument('--pretrain-emb', type=str, default='glove')
 
 # dir param
-parser.add_argument('--save-dir', type=str, default='ckpt/yelp_al.pt')
+parser.add_argument('--save-dir', type=str, default='ckpt/double_yelp_al.pt')
 
 args = parser.parse_args()
 

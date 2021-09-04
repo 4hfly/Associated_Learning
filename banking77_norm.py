@@ -28,7 +28,7 @@ parser = argparse.ArgumentParser('Banking77 Dataset for LSTM training')
 
 # model param
 parser.add_argument('--emb-dim', type=int, help='word embedding dimension', default=300)
-parser.add_argument('--hid-dim', type=int, help='lstm1 hidden dimension', default=400)
+parser.add_argument('--hid-dim', type=int, help='lstm1 hidden dimension', default=500)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 parser.add_argument('--pretrain-emb', type=str, help='pretrained word embedding: glove or fasttest', default='glove')
 
@@ -154,7 +154,7 @@ dist = [1/x for x in dist]
 dist = torch.tensor(dist)
 dist = F.normalize(dist,dim=0)
 
-model = sentimentLSTM(args.vocab_size, args.emb_dim, args.hid_dim, 2, pretrain=pretrain)
+model = sentimentLSTM(args.vocab_size, args.emb_dim, args.hid_dim, 1, pretrain=pretrain)
 model = model.to(device)
 print('LSTM banking77 model param num', get_n_params(model))
 T = Trainer(model, args.lr, train_loader=train_loader, valid_loader=valid_loader, test_loader=test_loader, save_dir = args.save_dir, loss_w=dist)
