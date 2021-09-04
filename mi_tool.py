@@ -99,37 +99,11 @@ class MI_Vis:
         bin_y = np.mean(bin_y, axis=-1)
         
         mi = entropy(bin_x, bin_y, base=2)
-        print('bin',mi)
+        return mi
         
 
 import numpy as np
 from scipy.spatial.distance import squareform, pdist
-
-
-
-x = np.random.rand(256, 10)
-t=x
-# t = np.random.rand(256, 20)
-# x = np.ones((256,100))
-# t = np.ones((256,200))
-# x = x/2
-# print(x[0])
-M = MI_Vis()
-
-# i = pyMIestimator(x,t)
-# print('their implementation',i)
-
-# x = np.ones((256,100))
-# t = np.ones((256,200))
-
-mi = M.get_mi_yj(x,t)
-print('my param method',mi)
-M.get_mi_bin(x,t, bins=30)
-
-import ee
-
-print((ee.mi(x,t))
-
 
 ##Entropy
 def entropy(Y):

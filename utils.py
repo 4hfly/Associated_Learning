@@ -12,6 +12,8 @@ from nltk.corpus import stopwords
 from torchnlp.word_to_vector import GloVe, FastText
 from vis import tsne
 
+from mi_tool import MI_Vis
+
 import wandb
 
 stop_words = set(stopwords.words('english'))
@@ -348,7 +350,6 @@ class TransfomerTrainer:
                 f'train_loss : emb loss {epoch_train_loss[0]}, layer1 loss {epoch_train_loss[1]}, layer2 loss {epoch_train_loss[2]}')
             print(
                 f'train_accuracy : {epoch_train_acc*100} val_accuracy : {epoch_val_acc*100}')
-
             if epoch_val_acc >= self.valid_acc_min:
                 torch.save(self.model.state_dict(), f'{self.save_dir}')
                 print('Validation acc increased ({:.6f} --> {:.6f}).  Saving model ...'.format(
@@ -409,6 +410,8 @@ class ALTrainer:
         # TODO: 我覺得這種外部控制的參數，用全域 CONFIG 之類的定義就好，
         # 傳參反而有點麻煩，而且 trace 會比較困難。
 
+        self.mi = MI_Vis()
+        self.sample = []
 
         self.model = model
         project_name = save_dir.replace('/', '-')
@@ -585,6 +588,8 @@ class ALTrainer:
                 f'train_loss : emb loss {epoch_train_loss[0]}, layer1 loss {epoch_train_loss[1]}, layer2 loss {epoch_train_loss[2]}')
             print(
                 f'train_accuracy : {epoch_train_acc*100} val_accuracy : {epoch_val_acc*100}')
+            wandb.log({"train acc":epoch_train_acc})
+            wandb.log({"valid acc":epoch_val_acc})
 
             if epoch_val_acc >= self.valid_acc_min:
                 torch.save(self.model.state_dict(), f'{self.save_dir}')
@@ -640,7 +645,8 @@ class ALTrainer:
                                  labels.to(torch.float).argmax(-1)).sum().item()
 
                 test_count += labels.size(0)
-
+        x = test_acc/test_count
+        wandb.log({"test acc": x})
         print('Test acc', test_acc/test_count)
 
     def short_cut_emb(self):
@@ -713,7 +719,7 @@ class ALTrainer:
 
         print('Short cut lstm Test acc', test_acc/test_count)
 
-    def tsne(self):
+    def tsne_(self):
 
         self.model.eval()
         self.model.load_state_dict(torch.load(f'{self.save_dir}'))
@@ -730,16 +736,14 @@ class ALTrainer:
                 model.layer_2.eval()
 
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
-
-                left = model.embedding.f(inputs)
-                output, hidden = model.layer_1.f(left)
-                left, (output, c) = model.layer_2.f(output, hidden)
-                left = left[:, -1, :]
+        
+                left = model.embedding(inputs)
+                output, hidden = model.lstm(left)
+                left = output[:, -1, :]
                 class_num = labels.size(-1)
                 # left = left.reshape(left.size(1), -1)
-                right = model.layer_2.bx(left)
-                for i in range(right.size(0)):
-                    all_feats.append(right[i,:].numpy())
+                for i in range(left.size(0)):
+                    all_feats.append(left[i,:].numpy())
                     all_labels.append(labels[i,:].argmax(-1).item())
         tsne_plot_dir = self.save_dir[:-2]+'al.tsne.png'
         tsne(all_feats, all_labels, class_num, tsne_plot_dir)
@@ -885,7 +889,7 @@ class Trainer:
         test_acc = num_correct/test_count
         print("Test accuracy: {:.3f}".format(test_acc))
 
-    def tsne(self):
+    def tsne_(self):
 
         self.model.eval()
         self.model.load_state_dict(torch.load(f'{self.save_dir}'))
@@ -897,7 +901,7 @@ class Trainer:
 
             with torch.no_grad():
 
-                embeds = self.model.embedding(x)
+                embeds = self.model.embedding(inputs)
                 lstm_out, hidden = self.model.lstm(embeds)
                 right = lstm_out[:, -1, :]
 

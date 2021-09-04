@@ -11,6 +11,10 @@ from torch.utils.data import DataLoader, TensorDataset
 from classification.model import LSTMAL, EmbeddingAL
 from utils import *
 
+import os
+
+os.environ["WANDB_SILENT"] = "true"
+
 stop_words = set(stopwords.words('english'))
 
 parser = argparse.ArgumentParser('YelpFull Dataset for AL training')
