@@ -18,6 +18,7 @@ CONFIG = {
     "embedding_dim": (300, 128)
 }
 
+
 class CLS(nn.Module):
     def __init__(self, vocab_size, emb_dim, hid_dim, emb=None):
 
@@ -414,7 +415,7 @@ class TransformerEncoderAL(ALComponent):
 
         super().__init__(f, g, bx, by, dx, dy, cb, ca, reverse=False)
 
-    def forward(self, x, y):
+    def forward(self, x, y, src_mask=None, key_padding_mask=None):
 
         # TODO: 還需要 src mask 的參數設定。
         return super().forward(x, y)

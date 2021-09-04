@@ -59,17 +59,20 @@ clean_test_id = convert2id(clean_test, vocab)
 max_len = max([len(s) for s in clean_train_id])
 print('max seq length', max_len)
 
-train_features = Padding(clean_train_id, max_len)
-test_features = Padding(clean_test_id, max_len)
+train_features, train_mask = PadTransformer(clean_train_id, max_len)
+test_features, test_mask = PadTransformer(clean_test_id, max_len)
 
 print('train label num', len(train_label))
-X_train, X_valid, y_train, y_valid = train_test_split(
-    train_features, train_label, test_size=0.2, random_state=1)
-X_test, y_test = test_features, test_label
+X_train, X_valid, mask_train, mask_valid, y_train, y_valid = train_test_split(
+    train_features, train_mask, train_label, test_size=0.2, random_state=1)
+X_test, mask_test, y_test = test_features, test_mask, test_label
 
-train_data = TensorDataset(torch.from_numpy(X_train), torch.stack(y_train))
-test_data = TensorDataset(torch.from_numpy(X_test), torch.stack(y_test))
-valid_data = TensorDataset(torch.from_numpy(X_valid), torch.stack(y_valid))
+train_data = TensorDataset(torch.from_numpy(
+    X_train), torch.from_numpy(mask_train), torch.stack(y_train))
+test_data = TensorDataset(torch.from_numpy(
+    X_test), torch.from_numpy(mask_test), torch.stack(y_test))
+valid_data = TensorDataset(torch.from_numpy(
+    X_valid), torch.from_numpy(mask_valid), torch.stack(y_valid))
 
 batch_size = args.batch_size
 
@@ -88,31 +91,30 @@ class TransformerForCLS(nn.Module):
 
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
         layers = nn.TransformerEncoderLayer(
-            embedding_dim, nhead, hidden_dim, dropout)
+            embedding_dim, nhead, hidden_dim, dropout, batch_first=True)
         self.encoder = nn.TransformerEncoder(layers, nlayers)
-        self.mask = None
         self.fc = nn.Linear(embedding_dim, class_num)
-        self.softmax = nn.Softmax(dim=-1)
+        self.softmax = nn.Softmax(dim=1)
 
-    def forward(self, x, mask=None):
+    def forward(self, x, mask=None, key_padding_mask=None):
 
         # if mask == None:
         #     device = x.device
-        #     if self.mask == None:
-        #         mask = self._generate_square_subsequent_mask(x).to(device)
-        #         self.mask = mask
-        # else:
-        #     self.mask = mask
+        #     mask = self._generate_square_subsequent_mask(x).to(device)
 
         x = self.embedding(x)
-        output = self.encoder(x, self.mask).mean(dim=1)
+        output = self.encoder(x, mask, key_padding_mask).sum(dim=1)
+        src_len = (key_padding_mask == 0).sum()
+        output = output / src_len
         output = self.fc(output)
 
         return self.softmax(output)
 
     def _generate_square_subsequent_mask(self, sz: int):
-        """Generate a square mask for the sequence. The masked positions are filled with float('-inf').
-            Unmasked positions are filled with float(0.0).
+        """
+        Generate a square mask for the sequence. The masked positions are filled with float('-inf').
+        Unmasked positions are filled with float(0.0).
+        Shape: (sz, sz).
         """
         mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
         mask = mask.float().masked_fill(mask == 0, float(
@@ -130,7 +132,7 @@ model = TransformerForCLS(args.vocab_size, args.emb_dim, args.hid_dim,
                           nhead, nlayers, class_num)
 model = model.to(device)
 print('Transformer agnews model param num', get_n_params(model))
-T = Trainer(model, args.lr, train_loader=train_loader,
-            valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir, is_rnn=False)
-T.run(epochs=args.epoch)
+T = TransfomerTrainer(model, args.lr, train_loader=train_loader,
+                      valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir, is_al=False)
+T.run(epoch=args.epoch)
 T.eval()

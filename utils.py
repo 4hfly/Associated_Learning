@@ -8,11 +8,11 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torchnlp
-from nltk.corpus import stopwords
-from torchnlp.word_to_vector import GloVe, FastText
-from vis import tsne
-
 import wandb
+from nltk.corpus import stopwords
+from torchnlp.word_to_vector import FastText, GloVe
+
+from vis import tsne
 
 stop_words = set(stopwords.words('english'))
 
@@ -116,6 +116,7 @@ def multi_class_process(labels, label_num):
         hot_vecs.append(b)
     return hot_vecs
 
+
 def multi_doubleclass_process(labels, label_num):
     '''
     this function will convert multi-label lists into one-hot vector or n-hot vector
@@ -127,6 +128,7 @@ def multi_doubleclass_process(labels, label_num):
         b[l+label_num] = 1
         hot_vecs.append(b)
     return hot_vecs
+
 
 def multi_label_process(labels, label_num):
     '''
@@ -173,6 +175,7 @@ def Padding(review_int, seq_len):
 
     return features
 
+
 def PadTransformer(review_int, seq_len):
     '''
     Return features of review_ints, where each review is padded with 0's or truncated to the input seq_length.
@@ -185,20 +188,19 @@ def PadTransformer(review_int, seq_len):
             new = zeros + review
             p1 = np.ones(seq_len-len(review), dtype=bool)
             p2 = np.zeros(len(review), dtype=bool)
-            new_mask =  np.concatenate((p1, p2), axis=0)
+            new_mask = np.concatenate((p1, p2), axis=0)
         else:
             new = review[: seq_len]
             new_mask = np.zeros(seq_len, dtype=bool)
         features[i, :] = np.array(new)
-        masks[i,:] = new_mask
+        masks[i, :] = new_mask
     return features, masks
-    # return features
 
 
 class TransfomerTrainer:
 
     def __init__(
-        self, model, lr, train_loader, valid_loader, test_loader, save_dir, label_num=None
+        self, model, lr, train_loader, valid_loader, test_loader, save_dir, label_num=None, double=False, class_num=None, is_al=False
     ):
 
         # Still need a arg parser to pass arguments
@@ -206,8 +208,17 @@ class TransfomerTrainer:
         # 傳參反而有點麻煩，而且 trace 會比較困難。
 
         self.model = model
+        # TODO: wandb env.
+        # project_name = save_dir.replace('/', '-')
+        # wandb.init(project=project_name, entity='hibb')
+        # config = wandb.config
+        # wandb.watch(self.model)
+
         self.opt = torch.optim.Adam(self.model.parameters(), lr=lr)
         # self.opt = torch.optim.SGD(self.model.parameters(), lr=0.1, momentum=0.9)
+        self.cri = nn.CrossEntropyLoss()
+        self.clip = 5
+
         self.label_num = label_num
         self.epoch_tr_loss, self.epoch_vl_loss = [], []
         self.epoch_tr_acc, self.epoch_vl_acc = [], []
@@ -215,9 +226,14 @@ class TransfomerTrainer:
         self.valid_loader = valid_loader
         self.test_loader = test_loader
         self.save_dir = save_dir
+        self.double = double
+        self.class_num = class_num
+        self.is_al = is_al
+
+        if self.double:
+            assert type(self.class_num) == int  # this is for double label
 
         is_cuda = torch.cuda.is_available()
-
         if is_cuda:
             self.device = torch.device("cuda")
             print("GPU is available")
@@ -227,46 +243,68 @@ class TransfomerTrainer:
 
     def run(self, epoch):
 
-        # TODO: ALTrainer 和 Trainer 這兩個的 epoch 一個有 s，一個沒有，應該要統一一下。
         self.valid_acc_min = -999
         for epoch in range(epoch):
-            train_losses = []
 
+            total_loss = []
             total_emb_loss = []
             total_l1_loss = []
             total_l2_loss = []
 
             total_acc = 0.0
             total_count = 0
-            self.model.embedding.train()
-            self.model.layer_1.train()
-            self.model.layer_2.train()
-            # TODO: model.train() 就會把 training 設為 True 了
 
-            # initialize hidden state
-            for inputs, labels in self.train_loader:
+            for inputs, masks, labels in self.train_loader:
+
+                inputs = inputs.to(self.device)
+                masks = masks.to(self.device)
+                labels = labels.to(self.device)
 
                 self.model.train()
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
-
                 self.opt.zero_grad()
 
-                emb_loss, l1_loss, l2_loss = self.model(inputs, labels)
+                if self.is_al:
 
-                loss = emb_loss + l1_loss + l2_loss
+                    emb_loss, l1_loss, l2_loss = self.model(inputs, labels)
+
+                    # wandb.log({"emb loss": emb_loss.item()})
+                    # wandb.log({"lstm1 loss": l1_loss.item()})
+                    # wandb.log({"lstm2 loss": l2_loss.item()})
+                    # wandb.log({"emb bridge loss": self.model.embedding.loss_b})
+                    # wandb.log({"emb decode loss": self.model.embedding.loss_d})
+                    # wandb.log({"lstm1 bridge loss": self.model.layer_1.loss_b})
+                    # wandb.log({"lstm1 decode loss": self.model.layer_1.loss_d})
+                    # wandb.log({"lstm2 bridge loss": self.model.layer_2.loss_b})
+                    # wandb.log({"lstm2 decode loss": self.model.layer_2.loss_d})
+
+                    loss = emb_loss + l1_loss + l2_loss
+
+                else:
+
+                    outputs = self.model(inputs, key_padding_mask=masks)
+                    loss = self.cri(outputs, torch.argmax(labels.long(), dim=1))
+
+                # wandb.log({"total loss": loss.item()})
                 loss.backward()
 
-                nn.utils.clip_grad_norm_(
-                    self.model.layer_1.parameters(), 5, error_if_nonfinite=True)
-                nn.utils.clip_grad_norm_(
-                    self.model.layer_2.parameters(), 5, error_if_nonfinite=True)
+                if self.is_al:
+                    nn.utils.clip_grad_norm_(
+                        self.model.layer_1.parameters(), self.clip, error_if_nonfinite=True
+                    )
+                    nn.utils.clip_grad_norm_(
+                        self.model.layer_1.parameters(), self.clip, error_if_nonfinite=True
+                    )
+                    total_emb_loss.append(emb_loss.item())
+                    total_l1_loss.append(l1_loss.item())
+                    total_l2_loss.append(l2_loss.item())
+                else:
+                    nn.utils.clip_grad_norm_(
+                        self.model.parameters(), self.clip, error_if_nonfinite=True
+                    )
 
-                total_emb_loss.append(emb_loss.item())
-                total_l1_loss.append(l1_loss.item())
-                total_l2_loss.append(l2_loss.item())
+                total_loss.append(loss.item())
 
                 self.opt.step()
-
                 torch.cuda.empty_cache()
 
                 # calculate the loss and perform backprop
@@ -274,68 +312,88 @@ class TransfomerTrainer:
 
                     self.model.eval()
 
-                    left = self.model.embedding.f(inputs)
-                    output = self.model.layer_1.f(left)
-                    left = self.model.layer_2.f(output)
-                    left = left[:, -1, :]
+                    if self.is_al:
 
-                    right = self.model.layer_2.bx(left)
-                    right = self.model.layer_2.dy(right)
-                    right = self.model.layer_1.dy(right)
-                    if self.label_num == 2:
-                        predicted_label = torch.round(
-                            self.model.embedding.dy(right).squeeze())
-                        total_acc += (predicted_label ==
-                                      labels.to(torch.float)).sum().item()
+                        # TODO: mean pooling.
+                        left = self.model.embedding.f(inputs)
+                        output, hidden = self.model.layer_1.f(left)
+                        left = self.model.layer_2.f(output, hidden)
+                        left = left[:, -1, :]
+
+                        right = self.model.layer_2.bx(left)
+                        right = self.model.layer_2.dy(right)
+                        right = self.model.layer_1.dy(right)
+                        if self.label_num == 2:
+                            predicted_label = torch.round(
+                                self.model.embedding.dy(right).squeeze())
+                            total_acc += (predicted_label ==
+                                          labels.to(torch.float)).sum().item()
+                        else:
+                            if self.double is False:
+                                predicted_label = self.model.embedding.dy(
+                                    right)
+                            else:
+                                out = self.model.embedding.dy(right)
+                                predicted_label = out[:, :self.class_num] + \
+                                    out[:, self.class_num:]
+                                labels = labels[:, :self.class_num] + \
+                                    labels[:, self.class_num:]
+
                     else:
-                        predicted_label = self.model.embedding.dy(right)
-                        # NOTE: testing function.
-                        # print(predicted_label.argmax(1))
-                        # print(labels.to(torch.float).argmax(-1))
-                        total_acc += (predicted_label.argmax(-1) ==
-                                      labels.to(torch.float).argmax(-1)).sum().item()
+                        predicted_label = outputs
 
+                    total_acc += (predicted_label.argmax(-1) ==
+                                  labels.to(torch.float).argmax(-1)).sum().item()
                     total_count += labels.size(0)
 
-            # TODO: 這個 val_losses 沒用到。
-            val_losses = []
             val_acc = 0.0
             val_count = 0
 
-            self.model.embedding.eval()
-            self.model.layer_1.eval()
-            self.model.layer_2.eval()
-
-            for inputs, labels in self.valid_loader:
+            for inputs, masks, labels in self.valid_loader:
 
                 with torch.no_grad():
 
-                    self.model.embedding.eval()
-                    self.model.layer_1.eval()
-                    self.model.layer_2.eval()
+                    inputs = inputs.to(self.device)
+                    masks = masks.to(self.device)
+                    labels = labels.to(self.device)
 
-                    inputs, labels = inputs.to(
-                        self.device), labels.to(self.device)
+                    self.model.eval()
 
-                    left = self.model.embedding.f(inputs)
-                    output = self.model.layer_1.f(left)
-                    left = self.model.layer_2.f(output)
-                    left = left[:, -1, :]
+                    if self.is_al:
 
-                    right = self.model.layer_2.bx(left)
-                    right = self.model.layer_2.dy(right)
-                    right = self.model.layer_1.dy(right)
-                    if self.label_num == 2:
-                        predicted_label = torch.round(
-                            self.model.embedding.dy(right).squeeze())
-                        val_acc += (predicted_label ==
-                                    labels.to(torch.float)).sum().item()
+                        left = self.model.embedding.f(inputs)
+                        left = self.model.layer_1.f(left)
+                        left = self.model.layer_2.f(left)
+                        left = left[:, -1, :]
+
+                        right = self.model.layer_2.bx(left)
+                        right = self.model.layer_2.dy(right)
+                        right = self.model.layer_1.dy(right)
+
+                        if self.label_num == 2:
+                            predicted_label = torch.round(
+                                self.model.embedding.dy(right).squeeze())
+                            val_acc += (predicted_label ==
+                                        labels.to(torch.float)).sum().item()
+                        else:
+                            if self.double is False:
+                                predicted_label = self.model.embedding.dy(
+                                    right)
+                            else:
+                                out = self.model.embedding.dy(right)
+                                predicted_label = out[:, :self.class_num] + \
+                                    out[:, self.class_num:]
+                                labels = labels[:, :self.class_num] + \
+                                    labels[:, self.class_num:]
+
                     else:
-                        predicted_label = self.model.embedding.dy(
-                            right).squeeze()
-                        val_acc += (predicted_label.argmax(-1) ==
-                                    labels.to(torch.float).argmax(-1)).sum().item()
 
+                        predicted_label = self.model(
+                            inputs, key_padding_mask=masks
+                        )
+
+                    val_acc += (predicted_label.argmax(-1) ==
+                                labels.to(torch.float).argmax(-1)).sum().item()
                     val_count += labels.size(0)
 
             epoch_train_loss = [np.mean(total_emb_loss), np.mean(
@@ -355,13 +413,70 @@ class TransfomerTrainer:
                     self.valid_acc_min, epoch_val_acc))
                 self.valid_acc_min = epoch_val_acc
             print(25*'==')
-
+        final_dp = self.save_dir[:-3] + 'last.pth'
+        torch.save(self.model.state_dict(), f'{final_dp}')
         print('best val acc', self.valid_acc_min)
 
     def eval(self):
 
         self.model.eval()
         self.model.load_state_dict(torch.load(f'{self.save_dir}'))
+        model = self.model.to(self.device)
+
+        test_acc = 0
+        test_count = 0
+
+        for inputs, masks, labels in self.test_loader:
+
+            with torch.no_grad():
+
+                inputs = inputs.to(self.device)
+                masks = masks.to(self.device)
+                labels = labels.to(self.device)
+
+                if self.is_al:
+
+                    # TODO: mean pooling.
+                    left = model.embedding.f(inputs)
+                    left = model.layer_1.f(left)
+                    left = model.layer_2.f(left)
+                    left = left[:, -1, :]
+                    right = model.layer_2.bx(left)
+                    right = model.layer_2.dy(right)
+                    right = model.layer_1.dy(right)
+
+                    if self.label_num == 2:
+                        predicted_label = torch.round(
+                            model.embedding.dy(right).squeeze())
+                        test_acc += (predicted_label ==
+                                     labels.to(torch.float)).sum().item()
+                    else:
+                        if self.double is False:
+                            predicted_label = self.model.embedding.dy(right)
+                        else:
+                            out = self.model.embedding.dy(right)
+                            predicted_label = out[:, :self.class_num] + \
+                                out[:, self.class_num:]
+                            labels = labels[:, :self.class_num] + \
+                                labels[:, self.class_num:]
+
+                else:
+
+                    predicted_label = self.model(
+                        inputs, key_padding_mask=masks
+                    )
+
+                test_acc += (predicted_label.argmax(-1) ==
+                             labels.to(torch.float).argmax(-1)).sum().item()
+
+                test_count += labels.size(0)
+
+        print('Test acc', test_acc/test_count)
+
+    def short_cut_emb(self):
+
+        self.model.eval()
+        # self.model.load_state_dict(torch.load(f'{self.save_dir}'))
         model = self.model.to(self.device)
 
         test_acc = 0
@@ -377,26 +492,88 @@ class TransfomerTrainer:
 
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
 
-                left = self.model.embedding.f(inputs)
-                output = self.model.layer_1.f(left)
-                left = self.model.layer_2.f(output)
-                left = left[:, -1, :]
-                right = model.layer_2.bx(left)
-                right = model.layer_2.dy(right)
-                right = model.layer_1.dy(right)
+                right = model.short_cut_emb(inputs)
+
                 if self.label_num == 2:
                     predicted_label = torch.round(
                         model.embedding.dy(right).squeeze())
                     test_acc += (predicted_label ==
                                  labels.to(torch.float)).sum().item()
                 else:
-                    predicted_label = model.embedding.dy(right).squeeze()
+                    predicted_label = right.squeeze()
                     test_acc += (predicted_label.argmax(-1) ==
                                  labels.to(torch.float).argmax(-1)).sum().item()
 
                 test_count += labels.size(0)
 
-        print('Test acc', test_acc/test_count)
+        print('Short cut emb Test acc', test_acc/test_count)
+
+    def short_cut_l1(self):
+
+        self.model.eval()
+        # self.model.load_state_dict(torch.load(f'{self.save_dir}'))
+        model = self.model.to(self.device)
+
+        test_acc = 0
+        test_count = 0
+
+        for inputs, labels in self.test_loader:
+
+            with torch.no_grad():
+
+                model.embedding.eval()
+                model.layer_1.eval()
+                model.layer_2.eval()
+
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
+
+                right = model.short_cut_lstm(inputs)
+
+                if self.label_num == 2:
+                    predicted_label = torch.round(
+                        model.embedding.dy(right).squeeze())
+                    test_acc += (predicted_label ==
+                                 labels.to(torch.float)).sum().item()
+                else:
+                    predicted_label = right.squeeze()
+                    test_acc += (predicted_label.argmax(-1) ==
+                                 labels.to(torch.float).argmax(-1)).sum().item()
+
+                test_count += labels.size(0)
+
+        print('Short cut lstm Test acc', test_acc/test_count)
+
+    def tsne(self):
+
+        self.model.eval()
+        self.model.load_state_dict(torch.load(f'{self.save_dir}'))
+        model = self.model.to(self.device)
+        all_feats = []
+        all_labels = []
+        class_num = 0
+        for inputs, labels in self.test_loader:
+
+            with torch.no_grad():
+
+                model.embedding.eval()
+                model.layer_1.eval()
+                model.layer_2.eval()
+
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
+
+                left = model.embedding.f(inputs)
+                output, hidden = model.layer_1.f(left)
+                left, (output, c) = model.layer_2.f(output, hidden)
+                left = left[:, -1, :]
+                class_num = labels.size(-1)
+                # left = left.reshape(left.size(1), -1)
+                right = model.layer_2.bx(left)
+                for i in range(right.size(0)):
+                    all_feats.append(right[i, :].numpy())
+                    all_labels.append(labels[i, :].argmax(-1).item())
+        tsne_plot_dir = self.save_dir[:-2]+'al.tsne.png'
+        tsne(all_feats, all_labels, class_num, tsne_plot_dir)
+        print('tsne saved in ', tsne_plot_dir)
 
 
 class ALTrainer:
@@ -408,7 +585,6 @@ class ALTrainer:
         # Still need a arg parser to pass arguments
         # TODO: 我覺得這種外部控制的參數，用全域 CONFIG 之類的定義就好，
         # 傳參反而有點麻煩，而且 trace 會比較困難。
-
 
         self.model = model
         project_name = save_dir.replace('/', '-')
@@ -429,7 +605,7 @@ class ALTrainer:
         self.class_num = class_num
 
         if self.double:
-            assert type(self.class_num) == int # this is for double label
+            assert type(self.class_num) == int  # this is for double label
 
         is_cuda = torch.cuda.is_available()
 
@@ -467,7 +643,7 @@ class ALTrainer:
                 self.opt.zero_grad()
 
                 emb_loss, l1_loss, l2_loss = self.model(inputs, labels)
-                
+
                 wandb.log({"emb loss": emb_loss.item()})
                 wandb.log({"lstm1 loss": l1_loss.item()})
                 wandb.log({"lstm2 loss": l2_loss.item()})
@@ -518,8 +694,10 @@ class ALTrainer:
                             predicted_label = self.model.embedding.dy(right)
                         else:
                             out = self.model.embedding.dy(right)
-                            predicted_label = out[:, :self.class_num] + out[:, self.class_num:]
-                            labels = labels[:, :self.class_num] + labels[:, self.class_num:]
+                            predicted_label = out[:, :self.class_num] + \
+                                out[:, self.class_num:]
+                            labels = labels[:, :self.class_num] + \
+                                labels[:, self.class_num:]
                         # print(predicted_label)
                         # print(labels)
                         # raise Exception
@@ -567,8 +745,10 @@ class ALTrainer:
                             predicted_label = self.model.embedding.dy(right)
                         else:
                             out = self.model.embedding.dy(right)
-                            predicted_label = out[:, :self.class_num] + out[:, self.class_num:]
-                            labels = labels[:, :self.class_num] + labels[:, self.class_num:]
+                            predicted_label = out[:, :self.class_num] + \
+                                out[:, self.class_num:]
+                            labels = labels[:, :self.class_num] + \
+                                labels[:, self.class_num:]
 
                         val_acc += (predicted_label.argmax(-1) ==
                                     labels.to(torch.float).argmax(-1)).sum().item()
@@ -633,8 +813,10 @@ class ALTrainer:
                         predicted_label = self.model.embedding.dy(right)
                     else:
                         out = self.model.embedding.dy(right)
-                        predicted_label = out[:, :self.class_num] + out[:, self.class_num:]
-                        labels = labels[:, :self.class_num] + labels[:, self.class_num:]
+                        predicted_label = out[:, :self.class_num] + \
+                            out[:, self.class_num:]
+                        labels = labels[:, :self.class_num] + \
+                            labels[:, self.class_num:]
 
                     test_acc += (predicted_label.argmax(-1) ==
                                  labels.to(torch.float).argmax(-1)).sum().item()
@@ -720,7 +902,7 @@ class ALTrainer:
         model = self.model.to(self.device)
         all_feats = []
         all_labels = []
-        class_num=0
+        class_num = 0
         for inputs, labels in self.test_loader:
 
             with torch.no_grad():
@@ -739,16 +921,17 @@ class ALTrainer:
                 # left = left.reshape(left.size(1), -1)
                 right = model.layer_2.bx(left)
                 for i in range(right.size(0)):
-                    all_feats.append(right[i,:].numpy())
-                    all_labels.append(labels[i,:].argmax(-1).item())
+                    all_feats.append(right[i, :].numpy())
+                    all_labels.append(labels[i, :].argmax(-1).item())
         tsne_plot_dir = self.save_dir[:-2]+'al.tsne.png'
         tsne(all_feats, all_labels, class_num, tsne_plot_dir)
-        print('tsne saved in ',tsne_plot_dir)
+        print('tsne saved in ', tsne_plot_dir)
+
 
 class Trainer:
 
     def __init__(
-        self, model, lr, train_loader, valid_loader, test_loader, save_dir, label_num=None, loss_w=None, is_rnn=True
+        self, model, lr, train_loader, valid_loader, test_loader, save_dir, label_num=None, loss_w=None
     ):
 
         # Still need a arg parser to pass arguments
@@ -770,7 +953,6 @@ class Trainer:
         else:
             self.cri = nn.CrossEntropyLoss()
         self.clip = 5
-        self.is_rnn = is_rnn
         is_cuda = torch.cuda.is_available()
 
         if is_cuda:
@@ -799,10 +981,7 @@ class Trainer:
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
 
                 self.opt.zero_grad()
-                if self.is_rnn:
-                    output, h = self.model(inputs)
-                else:
-                    output = self.model(inputs)
+                output, h = self.model(inputs)
                 loss = self.cri(output, labels)
                 loss.backward()
                 train_losses.append(loss.item())
@@ -823,10 +1002,7 @@ class Trainer:
                     labels = torch.argmax(labels.long(), dim=1)
                     inputs, labels = inputs.to(
                         self.device), labels.to(self.device)
-                    if self.is_rnn:
-                        output, val_h = self.model(inputs)
-                    else:
-                        output = self.model(inputs)
+                    output, val_h = self.model(inputs)
                     val_loss = self.cri(output, labels)
                     val_losses.append(val_loss.item())
                     # accuracy = acc(output,labels)
@@ -867,10 +1043,7 @@ class Trainer:
 
             labels = torch.argmax(labels.long(), dim=1)
             inputs, labels = inputs.to(self.device), labels.to(self.device)
-            if self.is_rnn:
-                output, test_h = self.model(inputs)
-            else:
-                output = self.model(inputs)
+            output, test_h = self.model(inputs)
             # calculate loss
             test_loss = self.cri(output, labels)
             test_losses.append(test_loss.item())
@@ -892,7 +1065,7 @@ class Trainer:
         model = self.model.to(self.device)
         all_feats = []
         all_labels = []
-        class_num=0
+        class_num = 0
         for inputs, labels in self.test_loader:
 
             with torch.no_grad():
@@ -902,9 +1075,9 @@ class Trainer:
                 right = lstm_out[:, -1, :]
 
                 for i in range(right.size(0)):
-                    all_feats.append(right[i,:].numpy())
-                    all_labels.append(labels[i,:].argmax(-1).item())
+                    all_feats.append(right[i, :].numpy())
+                    all_labels.append(labels[i, :].argmax(-1).item())
 
         tsne_plot_dir = self.save_dir[:-2]+'lstm.tsne.png'
         tsne(all_feats, all_labels, class_num, tsne_plot_dir)
-        print('tsne saved in ',tsne_plot_dir)
+        print('tsne saved in ', tsne_plot_dir)
