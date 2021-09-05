@@ -394,8 +394,9 @@ class TransformerEncoderAL(ALComponent):
             act = nn.ELU()
 
         # TODO: pytorch v1.9.0 有 layer_norm_eps, batch_first 兩個參數，v1.8.1 沒有。
-        f = nn.TransformerEncoderLayer(
+        encoder_layer = nn.TransformerEncoderLayer(
             d_model[0], nhead, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation, layer_norm_eps=layer_norm_eps, batch_first=batch_first)
+        f = nn.TransformerEncoder(encoder_layer, 1)
         g = nn.Sequential(
             nn.Linear(d_model[1], y_hidden, bias=False),
             act
@@ -415,10 +416,30 @@ class TransformerEncoderAL(ALComponent):
 
         super().__init__(f, g, bx, by, dx, dy, cb, ca, reverse=False)
 
-    def forward(self, x, y, src_mask=None, key_padding_mask=None):
+    def forward(self, x, y, src_mask=None, src_key_padding_mask=None):
 
-        # TODO: 還需要 src mask 的參數設定。
-        return super().forward(x, y)
+        # NOTE: src_mask在encoder這邊應該是不需要。
+        self.x = x
+        self.y = y
+
+        if self.training:
+
+            self._s = self.f(x, src_mask, src_key_padding_mask)
+            # self._s_prime = self.dx(self._s)
+            self._t = self.g(y)
+            self._t_prime = self.dy(self._t)
+            return self._s.detach(), self._t.detach()
+
+        else:
+
+            if not self.reverse:
+                self._s = self.f(x, src_mask, src_key_padding_mask)
+                # self._t_prime = self.dy(self.bx(self._s))
+                return self._s.detach(), self._t_prime.detach()
+            else:
+                self._t = self.g(x)
+                self._s_prime = self.dx(self.by(self._t))
+                return self._t.detach(), self._s_prime.detach()
 
     def loss(self):
 
