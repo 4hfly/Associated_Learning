@@ -35,7 +35,7 @@ parser.add_argument('--lr', type=float, help='lr', default=0.001)
 parser.add_argument('--batch-size', type=int, help='batch-size', default=64)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
-parser.add_argument('--epoch', type=int, default=20)
+parser.add_argument('--epoch', type=int, default=10)
 parser.add_argument('--class-num', type=int, default=4)
 
 # dir param
@@ -74,7 +74,6 @@ print('max seq length', max_len)
 train_features = Padding(clean_train_id, max_len)
 test_features = Padding(clean_test_id, max_len)
 
-print('train label num', len(train_label))
 X_train, X_valid, y_train, y_valid = train_test_split(
     train_features, train_label, test_size=0.2, random_state=1)
 X_test, y_test = test_features, test_label

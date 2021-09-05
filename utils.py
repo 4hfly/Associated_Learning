@@ -291,20 +291,20 @@ class TransfomerTrainer:
                 # wandb.log({"total loss": loss.item()})
                 loss.backward()
 
-                if self.is_al:
-                    nn.utils.clip_grad_norm_(
-                        self.model.layer_1.parameters(), self.clip, error_if_nonfinite=True
-                    )
-                    nn.utils.clip_grad_norm_(
-                        self.model.layer_1.parameters(), self.clip, error_if_nonfinite=True
-                    )
-                    total_emb_loss.append(emb_loss.item())
-                    total_l1_loss.append(l1_loss.item())
-                    total_l2_loss.append(l2_loss.item())
-                else:
-                    nn.utils.clip_grad_norm_(
-                        self.model.parameters(), self.clip, error_if_nonfinite=True
-                    )
+                # if self.is_al:
+                #     nn.utils.clip_grad_norm_(
+                #         self.model.layer_1.parameters(), self.clip, error_if_nonfinite=True
+                #     )
+                #     nn.utils.clip_grad_norm_(
+                #         self.model.layer_1.parameters(), self.clip, error_if_nonfinite=True
+                #     )
+                #     total_emb_loss.append(emb_loss.item())
+                #     total_l1_loss.append(l1_loss.item())
+                #     total_l2_loss.append(l2_loss.item())
+                # else:
+                #     nn.utils.clip_grad_norm_(
+                #         self.model.parameters(), self.clip, error_if_nonfinite=True
+                #     )
 
                 total_loss.append(loss.item())
 
@@ -352,6 +352,7 @@ class TransfomerTrainer:
 
             val_acc = 0.0
             val_count = 0
+            val_loss = 0.0
 
             for inputs, masks, labels in self.valid_loader:
 
@@ -406,10 +407,18 @@ class TransfomerTrainer:
             epoch_val_acc = val_acc/val_count
 
             print(f'Epoch {epoch+1}')
-            print(
-                f'train_loss : emb loss {epoch_train_loss[0]}, layer1 loss {epoch_train_loss[1]}, layer2 loss {epoch_train_loss[2]}')
-            print(
-                f'train_accuracy : {epoch_train_acc*100} val_accuracy : {epoch_val_acc*100}')
+            if self.is_al:
+                print(
+                    f'train_loss : emb loss {epoch_train_loss[0]}, layer1 loss {epoch_train_loss[1]}, layer2 loss {epoch_train_loss[2]}')
+                print(
+                    f'train_accuracy : {epoch_train_acc*100} val_accuracy : {epoch_val_acc*100}')
+            else:
+                print(
+                    f'training loss {np.mean(total_loss)}'
+                )
+                print(
+                    f'train acc: {epoch_train_acc*200} val acc: {epoch_val_acc*100}'
+                )
             if epoch_val_acc >= self.valid_acc_min:
                 torch.save(self.model.state_dict(), f'{self.save_dir}')
                 print('Validation acc increased ({:.6f} --> {:.6f}).  Saving model ...'.format(
@@ -621,6 +630,8 @@ class ALTrainer:
         else:
             self.device = torch.device("cpu")
             print("GPU not available, CPU used")
+        
+        self.ckpt_epoch = 0
 
     def run(self, epoch):
 
@@ -775,6 +786,7 @@ class ALTrainer:
             wandb.log({"valid acc":epoch_val_acc})
 
             if epoch_val_acc >= self.valid_acc_min:
+                self.ckpt_epoch = epoch+1
                 torch.save(self.model.state_dict(), f'{self.save_dir}')
                 print('Validation acc increased ({:.6f} --> {:.6f}).  Saving model ...'.format(
                     self.valid_acc_min, epoch_val_acc))
@@ -783,7 +795,7 @@ class ALTrainer:
         final_dp = self.save_dir[:-3] + 'last.pth'
         torch.save(self.model.state_dict(), f'{final_dp}')
         print('best val acc', self.valid_acc_min)
-
+        print('best checkpoint at', self.ckpt_epoch, 'epoch')
     def eval(self):
 
         self.model.eval()
@@ -905,10 +917,10 @@ class ALTrainer:
         print('Short cut lstm Test acc', test_acc/test_count)
 
     def tsne_(self):
-
+        print('working on tsne')
         self.model.eval()
         self.model.load_state_dict(torch.load(f'{self.save_dir}'))
-        model = self.model.to(self.device)
+        self.model = self.model.to(self.device)
         all_feats = []
         all_labels = []
         class_num = 0
@@ -916,25 +928,27 @@ class ALTrainer:
 
             with torch.no_grad():
 
-                model.embedding.eval()
-                model.layer_1.eval()
-                model.layer_2.eval()
+                self.model.embedding.eval()
+                self.model.layer_1.eval()
+                self.model.layer_2.eval()
 
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
-        
-                left = model.embedding(inputs)
-                output, hidden = model.lstm(left)
-                left = output[:, -1, :]
-                class_num = labels.size(-1)
+
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
+
+                left = self.model.embedding.f(inputs)
+                output, hidden = self.model.layer_1.f(left)
+                left, (output, c) = self.model.layer_2.f(output, hidden)
+                left = left[:, -1, :]
                 # left = left.reshape(left.size(1), -1)
-                for i in range(left.size(0)):
-                    all_feats.append(left[i,:].numpy())
+                right = self.model.layer_2.bx(left)
+                right = right.cpu()
+                labels = labels.cpu()
+                # left = left.reshape(left.size(1), -1)
+                for i in range(right.size(0)):
+                    all_feats.append(right[i,:].numpy())
                     all_labels.append(labels[i,:].argmax(-1).item())
 
-                right = model.layer_2.bx(left)
-                for i in range(right.size(0)):
-                    all_feats.append(right[i, :].numpy())
-                    all_labels.append(labels[i, :].argmax(-1).item())
         tsne_plot_dir = self.save_dir[:-2]+'al.tsne.png'
         tsne(all_feats, all_labels, class_num, tsne_plot_dir)
         print('tsne saved in ', tsne_plot_dir)
@@ -951,6 +965,11 @@ class Trainer:
         # 傳參反而有點麻煩，而且 trace 會比較困難。
 
         self.model = model
+
+        project_name = save_dir.replace('/', '-normal-')
+        wandb.init(project=project_name, entity='hibb')
+        config = wandb.config
+        wandb.watch(self.model)
         # self.opt = torch.optim.SGD(self.model.parameters(), lr=0.01, momentum=0.9)
         self.opt = torch.optim.Adam(self.model.parameters(), lr=lr)
         self.label_num = label_num
@@ -973,6 +992,8 @@ class Trainer:
         else:
             self.device = torch.device("cpu")
             print("GPU not available, CPU used")
+
+        self.ckpt_epoch = 0
 
     def run(self, epochs):
 
@@ -1036,14 +1057,17 @@ class Trainer:
             print(
                 f'train_accuracy : {epoch_train_acc*100} val_accuracy : {epoch_val_acc*100}')
 
+            wandb.log({"train acc": epoch_train_acc*100})
+            wandb.log({"valid acc": epoch_val_acc*100})
             if epoch_val_acc >= self.valid_acc_min:
+                self.ckpt_epoch = epoch+1
                 torch.save(self.model.state_dict(), f'{self.save_dir}')
                 print('Validation acc increased ({:.6f} --> {:.6f}).  Saving model ...'.format(
                     self.valid_acc_min, epoch_val_acc))
                 self.valid_acc_min = epoch_val_acc
             print(25*'==')
         print('best valid acc', self.valid_acc_min)
-
+        print('best checkpoint at', self.ckpt_epoch)
     def eval(self):
         test_losses = []  # track loss
         num_correct = 0
@@ -1081,11 +1105,12 @@ class Trainer:
         for inputs, labels in self.test_loader:
 
             with torch.no_grad():
-
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
                 embeds = self.model.embedding(inputs)
                 lstm_out, hidden = self.model.lstm(embeds)
                 right = lstm_out[:, -1, :]
-
+                right = right.cpu()
+                labels = labels.cpu()
                 for i in range(right.size(0)):
                     all_feats.append(right[i, :].numpy())
                     all_labels.append(labels[i, :].argmax(-1).item())

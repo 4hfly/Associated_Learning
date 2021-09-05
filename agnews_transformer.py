@@ -19,7 +19,7 @@ parser = argparse.ArgumentParser('AGNews Dataset for Transformer training')
 parser.add_argument('--emb_dim', type=int,
                     help='word embedding dimension', default=300)
 parser.add_argument('--hid-dim', type=int,
-                    help='lstm hidden dimension', default=400)
+                    help='hidden dimension', default=510)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 # training param
@@ -31,7 +31,9 @@ parser.add_argument('--epoch', type=int, default=20)
 
 # dir param
 parser.add_argument('--save-dir', type=str,
-                    default='data/ckpt/agnews_transformer.pt')
+                    default='ckpt/agnews_transformer.pt')
+
+parser.add_argument('--pretrain-emb', type=str, default='glove')
 
 args = parser.parse_args()
 
@@ -84,12 +86,15 @@ valid_loader = DataLoader(valid_data, shuffle=False, batch_size=batch_size)
 class TransformerForCLS(nn.Module):
 
     def __init__(
-        self, vocab_size, embedding_dim, hidden_dim, nhead, nlayers, class_num, dropout=0.5
+        self, vocab_size, embedding_dim, hidden_dim, nhead, nlayers, class_num, dropout=0.5, pretrain=None
     ):
 
         super(TransformerForCLS, self).__init__()
-
-        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        if pretrain == None:
+            self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        else:
+            self.embedding = nn.Embedding.from_pretrained(pretrain, freeze=False, padding_idx=0)
+        self.fc = nn.Linear(embedding_dim, hidden_dim)
         layers = nn.TransformerEncoderLayer(
             embedding_dim, nhead, hidden_dim, dropout, batch_first=True)
         self.encoder = nn.TransformerEncoder(layers, nlayers)
@@ -126,10 +131,14 @@ torch.cuda.empty_cache()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+if args.pretrain_emb != 'none':
+    w = get_word_vector(vocab, emb=args.pretrain_emb)
+else:
+    w = None
 nhead = 6
-nlayers = 6
+nlayers = 2
 model = TransformerForCLS(args.vocab_size, args.emb_dim, args.hid_dim,
-                          nhead, nlayers, class_num)
+                          nhead, nlayers, class_num, pretrain=w)
 model = model.to(device)
 print('Transformer agnews model param num', get_n_params(model))
 T = TransfomerTrainer(model, args.lr, train_loader=train_loader,

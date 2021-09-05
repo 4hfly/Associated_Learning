@@ -10,7 +10,8 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from classification.model import LSTMAL, EmbeddingAL
 from utils import *
-
+import os
+os.environ["WANDB_SILENT"] = "true"
 stop_words = set(stopwords.words('english'))
 
 parser = argparse.ArgumentParser('YelpFull Dataset for AL training')
@@ -31,7 +32,7 @@ parser.add_argument('--lr', type=float, help='lr', default=0.001)
 parser.add_argument('--batch-size', type=int, help='batch-size', default=64)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
-parser.add_argument('--epoch', type=int, default=50)
+parser.add_argument('--epoch', type=int, default=100)
 parser.add_argument('--class-num', type=int, default=151)
 
 parser.add_argument('--act', type=str,
@@ -39,7 +40,7 @@ parser.add_argument('--act', type=str,
 parser.add_argument('--pretrain-emb', type=str, default='glove')
 
 # dir param
-parser.add_argument('--save-dir', type=str, default='ckpt/yelp_al.pt')
+parser.add_argument('--save-dir', type=str, default='ckpt/clinic.al.pt')
 
 args = parser.parse_args()
 
@@ -49,12 +50,6 @@ train_set = dataset['train']
 val_set = dataset['validation']
 test_set = dataset['test']
 print(len(train_set))
-# print(len(news_train['train']))
-# news_val = load_dataset('clinc_oos', 'imbalanced')
-# print(len(news_val['train']))
-# new_test = load_dataset('clinc_oos', 'small')
-# print(len(new_test['train']))
-
 
 class_num = args.class_num
 
@@ -70,9 +65,9 @@ val_label = multi_class_process([b['intent'] for b in val_set], class_num)
 test_text = [b['text'] for b in test_set]
 test_label = multi_class_process([b['intent'] for b in test_set], class_num)
 
-clean_train = [data_preprocessing(t, True) for t in train_text]
-clean_valid = [data_preprocessing(t, True) for t in val_text]
-clean_test = [data_preprocessing(t, True) for t in test_text]
+clean_train = [data_preprocessing(t, False) for t in train_text]
+clean_valid = [data_preprocessing(t, False) for t in val_text]
+clean_test = [data_preprocessing(t, False) for t in test_text]
 
 
 vocab = create_vocab(clean_train)
@@ -95,7 +90,7 @@ print('valid size', len(valid_features))
 print('test size', len(test_features))
 print('=====================')
 
-X_train, X_valid, y_train, y_valid = train_features, valid_features, 0,0 
+X_train, X_valid, y_train, y_valid = train_features, valid_features, train_label, val_label
 
 X_test, y_test = test_features, test_label
 
@@ -189,5 +184,4 @@ T = ALTrainer(model, args.lr, train_loader=train_loader,
               valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
 T.run(epoch=args.epoch)
 T.eval()
-T.short_cut_emb()
-T.short_cut_l1()
+T.tsne_()

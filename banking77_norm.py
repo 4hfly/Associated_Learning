@@ -10,7 +10,8 @@ nltk.download('stopwords')
 from nltk.corpus import stopwords
 
 stop_words = set(stopwords.words('english'))
-
+import os
+os.environ["WANDB_SILENT"] = "true"
 from sklearn.model_selection import train_test_split
 
 import torch
@@ -36,7 +37,7 @@ parser.add_argument('--pretrain-emb', type=str, help='pretrained word embedding:
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
 parser.add_argument('--batch-size', type=int, help='batch-size', default=64)
 parser.add_argument('--epoch', type=int, default=500)
-
+parser.add_argument('--data-position', type=str, help='shuffle or sort', default='shuffle')
 # parser.add_argument('--pretrain-emb', type=str, default='glove')
 
 # dir param
@@ -44,13 +45,20 @@ parser.add_argument('--save-dir', type=str, default='ckpt/banking77.pt')
 
 args = parser.parse_args()
 
-
-
 bank_train = load_dataset('banking77', split='train')
 bank_test = load_dataset('banking77', split='test')
 
 train_text = [b['text'] for b in bank_train]
 train_label = multi_class_process([b['label'] for b in bank_train], 77)
+
+if args.data_position == 'sort':
+    train_label = [int(b['label']) for b in bank_train]
+    train_label, train_text = zip(*sorted(zip(train_label, train_text)))
+    train_text = list(train_text)
+    train_label = list(train_label)
+    train_label = multi_class_process([l for l in train_label], 77)
+    args.save_dir = args.save_dir[:-2]+'.sort.pt'
+
 label_dist = Counter([b['label'] for b in bank_train])
 test_text = [b['text'] for b in bank_test]
 test_label = multi_class_process([b['label'] for b in bank_test], 77)
@@ -70,7 +78,10 @@ train_features = Padding(clean_train_id, max_len)
 test_features = Padding(clean_test_id, max_len)
 
 print('train label num', len(train_label))
-X_train, X_valid, y_train, y_valid = train_test_split(train_features, train_label, test_size=0.2, random_state=1)
+shuf=True
+if args.data_position == 'sort':
+    shuf = False
+X_train, X_valid, y_train, y_valid = train_test_split(train_features, train_label, test_size=0.2, random_state=1, shuffle=shuf)
 X_test, y_test = test_features, test_label
 
 train_data = TensorDataset(torch.from_numpy(X_train), torch.stack(y_train))
@@ -79,7 +90,10 @@ valid_data = TensorDataset(torch.from_numpy(X_valid), torch.stack(y_valid))
 
 batch_size = args.batch_size
 
-train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
+if args.data_position == 'sort':
+    train_loader = DataLoader(train_data, shuffle=False, batch_size=batch_size)
+else:
+    train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
 test_loader = DataLoader(test_data, shuffle=False, batch_size=batch_size)
 valid_loader = DataLoader(valid_data, shuffle=False, batch_size=batch_size)
 

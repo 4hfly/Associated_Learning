@@ -1,133 +1,85 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-
-
-import numpy as np
-import pandas as pd
-
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-import re
-import string
-from collections import Counter
-from nltk.corpus import stopwords
-stop_words = set(stopwords.words('english'))
-
-from sklearn.model_selection import train_test_split
+import argparse
 
 import torch
-from torch.utils.data import DataLoader, TensorDataset
 import torch.nn as nn
+from datasets import load_dataset
+from nltk.corpus import stopwords
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, TensorDataset
 
 from classification.model import EmbeddingAL, LSTMAL
+from utils import *
 
-import sys
+import pandas as pd
 
-def get_n_params(model):
-    pp = 0
-    for p in list(model.parameters()):
-        nn = 1
-        for s in list(p.size()):
-            nn = nn*s
-        pp += nn
-    return pp
+import os
+os.environ["WANDB_SILENT"] = "true"
 
+parser = argparse.ArgumentParser('IMDB Dataset for AL training')
+
+# model param
+parser.add_argument('--word-emb', type=int,
+                    help='word embedding dimension', default=300)
+parser.add_argument('--label-emb', type=int,
+                    help='label embedding dimension', default=128)
+parser.add_argument('--l1-dim', type=int,
+                    help='lstm1 hidden dimension', default=300)
+parser.add_argument('--bridge-dim', type=int,
+                    help='bridge function dimension', default=300)
+parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
+
+parser.add_argument('--pretrain-emb', type=str, help='pretrained word embedding: glove or fasttest', default='glove')
+parser.add_argument('--data-position', type=str, help='shuffle or sort', default='shuffle')
+# training param
+parser.add_argument('--lr', type=float, help='lr', default=0.001)
+parser.add_argument('--batch-size', type=int, help='batch-size', default=64)
+parser.add_argument('--one-hot-label', type=bool,
+                    help='if true then use one-hot vector as label input, else integer', default=True)
+parser.add_argument('--epoch', type=int, default=20)
+
+# dir param
+parser.add_argument('--save-dir', type=str, default='ckpt/imdb.al.pt')
+
+parser.add_argument('--act', type=str,
+                    default='tanh')
+
+args = parser.parse_args()
 df = pd.read_csv('IMDB_Dataset.csv')
-
-
-def data_preprocessing(text):
-    text = text.lower()
-    text = re.sub('<.*?>', '', text) # Remove HTML from text
-    text = ''.join([c for c in text if c not in string.punctuation])# Remove punctuation
-    text = [word for word in text.split() if word not in stop_words]
-    text = ' '.join(text)
-    return text
-
-
 df['cleaned_reviews'] = df['review'].apply(data_preprocessing)
 corpus = [word for text in df['cleaned_reviews'] for word in text.split()]
-count_words = Counter(corpus)
-sorted_words = count_words.most_common()
 
+vocab = create_vocab(corpus, args.vocab_size)
 
-vocab_to_int = {w:i+2 for i, (w,c) in enumerate(sorted_words[:29999])}
+print('vocab size',len(vocab))
 
-vocab_to_int['pad'] = 0
-vocab_to_int['unk'] = 1
-
-
-print('vocab size',len(vocab_to_int))
-
-reviews_int = []
-for text in df['cleaned_reviews']:
-    r=[]
-    for word in text.split():
-        try:
-            r.append(vocab_to_int[word])
-        except:
-            r.append(vocab_to_int['unk'])
-    # r = [vocab_to_int[word] for word in text.split() if ]
-    reviews_int.append(r)
-
-# print(reviews_int[:1])
-df['Review int'] = reviews_int
-
+clean_train = [data_preprocessing(t) for t in corpus]
+clean_train_id = convert2id(clean_train, vocab)
 
 df['sentiment'] = df['sentiment'].apply(lambda x: 1 if x == 'positive' else 0)
+train_label = df['sentiment'].tolist()
+train_label = multi_class_process(train_label, 2)
 
-
-review_len = [len(x) for x in reviews_int]
-df['Review len'] = review_len
-
-# print(df['Review len'].describe())
-
-# df['Review len'].hist()
-
-
-def Padding(review_int, seq_len):
-    '''
-    Return features of review_ints, where each review is padded with 0's or truncated to the input seq_length.
-    '''
-    features = np.zeros((len(reviews_int), seq_len), dtype = int)
-    for i, review in enumerate(review_int):
-        if len(review) <= seq_len:
-            zeros = list(np.zeros(seq_len - len(review)))
-            new = zeros + review
-        else:
-            new = review[: seq_len]
-        features[i, :] = np.array(new)
-            
-    return features
-
-
-features = Padding(reviews_int, 200)
-
-X_train, X_remain, y_train, y_remain = train_test_split(features, df['sentiment'].to_numpy(), test_size=0.2, random_state=1)
+train_features = Padding(clean_train_id, 400)
+shuf=True
+if args.data_position == 'sort':
+    shuf = False
+X_train, X_remain, y_train, y_remain = train_test_split(train_features, train_label, test_size=0.2, random_state=1, shuffle=shuf)
 X_valid, X_test, y_valid, y_test = train_test_split(X_remain, y_remain, test_size=0.5, random_state=1)
 
 # create tensor dataset
-train_data = TensorDataset(torch.from_numpy(X_train), torch.from_numpy(y_train))
-test_data = TensorDataset(torch.from_numpy(X_test), torch.from_numpy(y_test))
-valid_data = TensorDataset(torch.from_numpy(X_valid), torch.from_numpy(y_valid))
+train_data = TensorDataset(torch.from_numpy(X_train), torch.stack(y_train))
+test_data = TensorDataset(torch.from_numpy(X_test), torch.stack(y_test))
+valid_data = TensorDataset(torch.from_numpy(X_valid), torch.stack(y_valid))
 
-# dataloaders
-batch_size = 16
+batch_size = args.batch_size
 
-train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
-test_loader = DataLoader(test_data, shuffle=True, batch_size=batch_size)
-valid_loader = DataLoader(valid_data, shuffle=True, batch_size=batch_size)
+if args.data_position == 'sort':
+    train_loader = DataLoader(train_data, shuffle=False, batch_size=batch_size)
+else:
+    train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
+test_loader = DataLoader(test_data, shuffle=False, batch_size=batch_size)
+valid_loader = DataLoader(valid_data, shuffle=False, batch_size=batch_size)
 
-
-# In[15]:
-
-
-# obtain one batch of training data
-dataiter = iter(train_loader)
-sample_x, sample_y = dataiter.next()
-
-save_dir = sys.argv[1] + '.pt'
 
 class SentAL(nn.Module):
     def __init__(self, emb, l1, l2):
@@ -136,24 +88,27 @@ class SentAL(nn.Module):
         self.layer_1 = l1
         self.layer_2 = l2
         self.dropout = nn.Dropout(0.1)
+
     def forward(self, x, y):
+
+        batch_size = x.size(0)
+        direction = 2
+
         emb_x, emb_y, = self.embedding(x, y)
         emb_x, emb_y = self.dropout(emb_x), self.dropout(emb_y)
         # print(self.embedding._t_prime.shape, self.embedding.y.shape)
-        emb_loss = self.embedding.loss() 
+        emb_loss = self.embedding.loss()
 
-        layer_1_x, h1 , layer_1_y = self.layer_1(emb_x, emb_y)
+        layer_1_x, h1, layer_1_y = self.layer_1(emb_x.detach(), emb_y.detach())
         layer_1_x, layer_1_y = self.dropout(layer_1_x), self.dropout(layer_1_y)
         layer_1_loss = self.layer_1.loss()
 
-        h,c = h1
-        h = h
-        c = c
-        # print(h.shape, c.shape)
-        h = h.reshape(2, h.size(0), -1)
-        h1 = (h,c)
-        
-        layer_2_x, h2, layer_2_y = self.layer_2(layer_1_x, layer_1_y, h1)
+        h, c = h1
+        h = h.reshape(direction, batch_size, -1)
+        h1 = (h.detach(), c.detach())
+
+        layer_2_x, h2, layer_2_y = self.layer_2(
+            layer_1_x.detach(), layer_1_y.detach(), h1)
         layer_2_loss = self.layer_2.loss()
 
         return emb_loss, layer_1_loss, layer_2_loss
@@ -174,184 +129,19 @@ else:
 # device = 'cpu'
 
 # Instantiate the model w/ hyperparams
-vocab_size = len(vocab_to_int)+1
-output_size = 1
-embedding_dim = 300
-hidden_dim = 400
-n_layers = 2
+if args.pretrain_emb == 'none':
+    emb = EmbeddingAL((args.vocab_size, 2), (args.bridge_dim, args.bridge_dim), lin=args.one_hot_label, act=act)
+else:
+    w = get_word_vector(vocab, emb=args.pretrain_emb)
+    emb = EmbeddingAL((args.vocab_size, 2), (args.bridge_dim, args.bridge_dim), lin=args.one_hot_label, pretrained=w,act=act)
 
-emb = EmbeddingAL((vocab_size, 2), (300, 128))
-l1 = LSTMAL(300, 128, (128,128), dropout=0, bidirectional=True)
-l2 = LSTMAL(256, 128, (128,128), dropout=0, bidirectional=True)
-
+l1 = LSTMAL(args.l1_dim, args.l1_dim, (args.bridge_dim, args.bridge_dim), dropout=0, bidirectional=True, act=act)
+l2 = LSTMAL(2*args.l1_dim, args.l1_dim, (args.bridge_dim, args.bridge_dim), dropout=0, bidirectional=True, act=act)
 model = SentAL(emb, l1, l2)
 model = model.to(device)
-print('model param', get_n_params(model))
-# raise Exception('ok')
-
-lr=0.001
-
-criterion = nn.BCELoss()
-
-optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-# optimizer_1 = torch.optim.Adam(model.embedding.parameters(), lr=1e-4)
-# optimizer_2 = torch.optim.Adam(model.layer_1.parameters(), lr=1e-4)
-# optimizer_3 = torch.optim.Adam(model.layer_2.parameters(), lr=1e-4)
-# function to predict accuracy
-def acc(pred,label):
-    pred = torch.round(pred.squeeze())
-    return torch.sum(pred == label.squeeze()).item()
-
-clip = 5
-epochs = 20
-valid_acc_min = 0
-# train for some number of epochs
-epoch_tr_loss,epoch_vl_loss = [],[]
-epoch_tr_acc,epoch_vl_acc = [],[]
-
-for epoch in range(epochs):
-    train_losses = []
-
-    total_emb_loss = []
-    total_l1_loss = []
-    total_l2_loss = []
-
-    total_acc = 0.0
-    total_count = 0
-    model.embedding.train()
-    model.layer_1.train()
-    model.layer_2.train()
-    model.embedding.training=True
-    model.layer_1.training=True
-    model.layer_2.training=True
-
-    # initialize hidden state 
-    for inputs, labels in train_loader:
-        model.train()
-
-        inputs, labels = inputs.to(device), labels.to(device)   
-        
-        optimizer.zero_grad()
-
-        emb_loss, l1_loss, l2_loss = model(inputs,labels)
-        
-        nn.utils.clip_grad_norm_(model.layer_1.parameters(), clip)
-        nn.utils.clip_grad_norm_(model.layer_2.parameters(), clip)
-        
-        loss = emb_loss + l1_loss + l2_loss
-        loss.backward()
-
-        total_emb_loss.append(emb_loss.item())
-        total_l1_loss.append(l1_loss.item())
-        total_l2_loss.append(l2_loss.item())
-
-        optimizer.step()
-
-        torch.cuda.empty_cache()
-
-        # calculate the loss and perform backprop
-        with torch.no_grad():
-            
-            model.eval()
-
-            left  =  model.embedding.f(inputs)
-            output, hidden = model.layer_1.f(left)
-            # output, (left, c) = model.layer_2.f(output, hidden)
-            left, (output, c) = model.layer_2.f(output, hidden)
-            left = left[:,-1,:]
-            # left = left.reshape(left.size(1), -1)
-
-            right = model.layer_2.bx(left)
-            right = model.layer_2.dy(right)
-            right = model.layer_1.dy(right)
-            predicted_label = torch.round(model.embedding.dy(right).squeeze())
-            total_acc += (predicted_label == labels.to(torch.float)).sum().item()
-            total_count += labels.size(0)
-
-        # clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
-        nn.utils.clip_grad_norm_(model.layer_1.parameters(), clip)
-        nn.utils.clip_grad_norm_(model.layer_2.parameters(), clip)
- 
-    
-    val_losses = []
-    val_acc = 0.0
-    val_count = 0
-
-    model.embedding.eval()
-    model.layer_1.eval()
-    model.layer_2.eval()
-
-    for inputs, labels in valid_loader:
-        with torch.no_grad():
-            model.embedding.eval()
-            model.layer_1.eval()
-            model.layer_2.eval()
-
-            inputs, labels = inputs.to(device), labels.to(device)
-
-            left = model.embedding.f(inputs)
-            output, hidden = model.layer_1.f(left)
-
-            left, (output, c) = model.layer_2.f(output, hidden)
-            left = left[:,-1,:]
-            
-            right = model.layer_2.bx(left)
-            right = model.layer_2.dy(right)
-            right = model.layer_1.dy(right)
-            predicted_label = torch.round(model.embedding.dy(right).squeeze())
-            val_acc += (predicted_label == labels.to(torch.float)).sum().item()
-            val_count += labels.size(0)
-            
-    epoch_train_loss = [np.mean(total_emb_loss), np.mean(total_l1_loss), np.mean(total_l2_loss)]
-    epoch_train_acc = total_acc/total_count
-    epoch_val_acc = val_acc/val_count
-
-    print(f'Epoch {epoch+1}') 
-    print(f'train_loss : {epoch_train_loss}')
-    print(f'train_accuracy : {epoch_train_acc*100} val_accuracy : {epoch_val_acc*100}')
-    if epoch_val_acc >= valid_acc_min:
-        torch.save(model.state_dict(), f'{save_dir}')
-        print('Validation acc increased ({:.6f} --> {:.6f}).  Saving model ...'.format(valid_acc_min,epoch_val_acc))
-        valid_acc_min = epoch_val_acc
-    print(25*'==')
-
-test_losses = [] # track loss
-num_correct = 0
-
-model.eval()
-model.load_state_dict(torch.load(f'{save_dir}'))
-model = model.to(device)
-
-test_acc = 0
-test_count = 0
-
-for inputs, labels in test_loader:
-    with torch.no_grad():
-        model.embedding.eval()
-        model.layer_1.eval()
-        model.layer_2.eval()
-
-        inputs, labels = inputs.to(device), labels.to(device)
-
-        left = model.embedding.f(inputs)
-        output, hidden = model.layer_1.f(left)
-        left, (output, c) = model.layer_2.f(output, hidden)
-        left = left[:,-1,:]
-        # left = left.reshape(left.size(1), -1)
-        right = model.layer_2.bx(left)
-        right = model.layer_2.dy(right)
-        right = model.layer_1.dy(right)
-        predicted_label = torch.round(model.embedding.dy(right).squeeze())
-        test_acc += (predicted_label == labels.to(torch.float)).sum().item()
-        test_count += labels.size(0)
-
-print('valid acc', valid_acc_min)
-print('Test acc', test_acc/test_count)
-
-# -- stats! -- ##
-# avg test loss
-# print("Test loss: {:.3f}".format(np.mean(test_losses)))
-
-# accuracy over all test data
-test_acc = test_acc/test_count
-print("Test accuracy: {:.3f}".format(test_acc))
+print('AL IMDB model param num', get_n_params(model))
+T = ALTrainer(model, args.lr, train_loader=train_loader,
+              valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
+T.run(epoch=args.epoch)
+T.eval()
+T.tsne_()

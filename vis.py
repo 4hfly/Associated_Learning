@@ -8,7 +8,7 @@ def tsne(x,y, class_num, save_dir):
     y: (n_sample, )
     class_num: int
     '''
-    x_emb = TSNE(n_components=2, random_state=0, perplexity=15).fit_transform(x)
+    x_emb = TSNE(n_components=2, random_state=0, perplexity=40).fit_transform(x)
     x_emb_x = x_emb[:,0]
     x_emb_y = x_emb[:,1]
     plt.scatter(x_emb_x, x_emb_y, c=y)
