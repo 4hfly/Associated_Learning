@@ -8,6 +8,7 @@ from nltk.corpus import stopwords
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
 
+from classification.model import EmbeddingAL, TransformerEncoderAL
 from utils import *
 
 stop_words = set(stopwords.words('english'))
@@ -16,24 +17,26 @@ stop_words = set(stopwords.words('english'))
 parser = argparse.ArgumentParser('AGNews Dataset for Transformer training')
 
 # model param
-parser.add_argument('--emb_dim', type=int,
+parser.add_argument('--pretrain-emb', type=str, default='glove')
+parser.add_argument('--emb-dim', type=int,
                     help='word embedding dimension', default=300)
+parser.add_argument('--label-dim', type=int,
+                    help='label embedding dimension', default=128)
 parser.add_argument('--hid-dim', type=int,
-                    help='hidden dimension', default=512)
+                    help='hidden dimension', default=510)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
+parser.add_argument('--act', type=str, default='tanh')
 
 # training param
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
 parser.add_argument('--batch-size', type=int, help='batch-size', default=32)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
-parser.add_argument('--epoch', type=int, default=5)
+parser.add_argument('--epoch', type=int, default=20)
 
 # dir param
 parser.add_argument('--save-dir', type=str,
                     default='ckpt/agnews_transformer.pt')
-
-parser.add_argument('--pretrain-emb', type=str, default='glove')
 
 args = parser.parse_args()
 
@@ -85,37 +88,32 @@ valid_loader = DataLoader(valid_data, shuffle=False, batch_size=batch_size)
 
 class TransformerForCLS(nn.Module):
 
-    def __init__(
-        self, vocab_size, embedding_dim, hidden_dim, nhead, nlayers, class_num, dropout=0.5, pretrain=None
-    ):
+    def __init__(self, emb, l1, l2):
 
         super(TransformerForCLS, self).__init__()
-        if pretrain == None:
-            self.embedding = nn.Embedding(vocab_size, embedding_dim)
-        else:
-            self.embedding = nn.Embedding.from_pretrained(
-                pretrain, freeze=False, padding_idx=0)
-        layers = nn.TransformerEncoderLayer(
-            embedding_dim, nhead, hidden_dim, dropout, batch_first=True)
-        self.encoder = nn.TransformerEncoder(layers, nlayers)
-        self.fc = nn.Linear(embedding_dim, class_num)
-        self.softmax = nn.Softmax(dim=1)
+        self.embedding = emb
+        self.layer_1 = l1
+        self.layer_2 = l2
+        self.dropout = nn.Dropout(0.1)
 
-    def forward(self, x, src_mask=None, src_key_padding_mask=None):
+    def forward(self, x, y, src_mask=None, src_key_padding_mask=None):
 
         # if mask == None:
         #     device = x.device
         #     mask = self._generate_square_subsequent_mask(x).to(device)
+        emb_x, emb_y = self.embedding(x, y)
+        emb_x, emb_y = self.dropout(emb_x), self.dropout(emb_y)
+        emb_loss = self.embedding.loss()
 
-        x = self.embedding(x)
-        output = self.encoder(x, src_mask, src_key_padding_mask).sum(dim=1)
-        src_len = (src_key_padding_mask == 0).sum(dim=1)
-        # fit the shape of output
-        src_len = torch.stack((src_len,) * output.size(1), dim=1)
-        output = output / src_len
-        output = self.fc(output)
+        layer_1_x, layer_1_y = self.layer_1(
+            emb_x.detach(), emb_y.detach(), src_mask, src_key_padding_mask)
+        layer_1_loss = self.layer_1.loss()
 
-        return self.softmax(output)
+        layer_2_x, layer_2_y = self.layer_2(
+            layer_1_x.detach(), layer_1_y.detach(), src_mask, src_key_padding_mask)
+        layer_2_loss = self.layer_2.loss()
+
+        return emb_loss, layer_1_loss, layer_2_loss
 
     def _generate_square_subsequent_mask(self, sz: int):
         """
@@ -128,21 +126,28 @@ class TransformerForCLS(nn.Module):
             '-inf')).masked_fill(mask == 1, float(0.0))
         return mask
 
-
 torch.cuda.empty_cache()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-if args.pretrain_emb != 'none':
-    w = get_word_vector(vocab, emb=args.pretrain_emb)
+act = get_act(args)
+if args.pretrain_emb == 'none':
+    emb = EmbeddingAL((args.vocab_size, class_num), (args.emb_dim,
+                                                     args.label_dim), lin=args.one_hot_label, act=act)
 else:
-    w = None
+    w = get_word_vector(vocab, emb=args.pretrain_emb)
+    emb = EmbeddingAL((args.vocab_size, class_num), (args.emb_dim,
+                                                     args.label_dim), lin=args.one_hot_label, pretrained=w, act=act)
+# TODO: 這裡 y 的 hidden size 也許需要再調整大小。
 nhead = 6
-nlayers = 3
-model = TransformerForCLS(args.vocab_size, args.emb_dim, args.hid_dim,
-                          nhead, nlayers, class_num, pretrain=w)
+l1 = TransformerEncoderAL((args.emb_dim, args.label_dim), nhead,
+                          args.hid_dim, args.hid_dim, dropout=0.1, batch_first=True, act=act)
+l2 = TransformerEncoderAL((args.emb_dim, args.hid_dim), nhead,
+                          args.hid_dim, args.hid_dim, dropout=0.1, batch_first=True, act=act)
+
+model = TransformerForCLS(emb, l1, l2)
 model = model.to(device)
-print('Transformer agnews model param num', get_n_params(model))
+print('Transformer AL agnews model param num', get_n_params(model))
 T = TransfomerTrainer(model, args.lr, train_loader=train_loader,
-                      valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir, is_al=False)
+                      valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir, is_al=True)
 T.run(epoch=args.epoch)
 T.eval()

@@ -530,6 +530,7 @@ cython_debug/
 *.tfrecords
 .data/*
 .vector_cache/*
+.word_vectors_cache/*
 data/*
 lm/__pycache__/
 lm/data/pretrain

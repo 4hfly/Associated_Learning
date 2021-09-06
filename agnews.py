@@ -95,6 +95,7 @@ train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
 test_loader = DataLoader(test_data, shuffle=False, batch_size=batch_size)
 valid_loader = DataLoader(valid_data, shuffle=False, batch_size=batch_size)
 
+
 class CLSAL(nn.Module):
 
     def __init__(self, emb, l1, l2):
@@ -111,7 +112,7 @@ class CLSAL(nn.Module):
         batch_size = x.size(0)
         direction = 2
 
-        emb_x, emb_y, = self.embedding(x, y)
+        emb_x, emb_y = self.embedding(x, y)
         emb_x, emb_y = self.dropout(emb_x), self.dropout(emb_y)
         # print(self.embedding._t_prime.shape, self.embedding.y.shape)
         emb_loss = self.embedding.loss()
@@ -130,19 +131,20 @@ class CLSAL(nn.Module):
 
         return emb_loss, layer_1_loss, layer_2_loss
 
+
 act = get_act(args)
 
 torch.cuda.empty_cache()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-if args.pretrain_emb == 'none': 
+if args.pretrain_emb == 'none':
     emb = EmbeddingAL((args.vocab_size, class_num), (args.word_emb,
-                                                    args.label_emb), lin=args.one_hot_label, act=act)
+                                                     args.label_emb), lin=args.one_hot_label, act=act)
 else:
     w = get_word_vector(vocab, emb=args.pretrain_emb)
     emb = EmbeddingAL((args.vocab_size, class_num), (args.word_emb,
-                                                    args.label_emb), lin=args.one_hot_label, pretrained=w, act=act)
+                                                     args.label_emb), lin=args.one_hot_label, pretrained=w, act=act)
 
 l1 = LSTMAL(args.word_emb, args.label_emb, (args.l1_dim,
                                             args.l1_dim), dropout=0., bidirectional=True, act=act)
