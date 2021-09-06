@@ -21,7 +21,7 @@ parser.add_argument('--word-emb', type=int,
 parser.add_argument('--label-emb', type=int,
                     help='label embedding dimension', default=128)
 parser.add_argument('--l1-dim', type=int,
-                    help='lstm1 hidden dimension', default=300)
+                    help='lstm1 hidden dimension', default=400)
 parser.add_argument('--bridge-dim', type=int,
                     help='bridge function dimension', default=300)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
@@ -43,33 +43,34 @@ parser.add_argument('--act', type=str,
 
 args = parser.parse_args()
 df = pd.read_csv('IMDB_Dataset.csv')
-df['cleaned_reviews'] = df['review'].apply(data_preprocessing)
-corpus = [word for text in df['cleaned_reviews'] for word in text.split()]
+df['cleaned_reviews'] = df['review'].apply(data_preprocessing, True)
 
+corpus = [word for text in df['cleaned_reviews'] for word in text.split()]
+train_text = df['cleaned_reviews'].tolist()
 vocab = create_vocab(corpus, args.vocab_size)
 
 print('vocab size',len(vocab))
 
-clean_train = [data_preprocessing(t) for t in corpus]
+clean_train = df['cleaned_reviews'].tolist()
+print(len(clean_train))
 clean_train_id = convert2id(clean_train, vocab)
 
 df['sentiment'] = df['sentiment'].apply(lambda x: 1 if x == 'positive' else 0)
+
 train_label = df['sentiment'].tolist()
-if args.data_position == 'sort':
-    train_label, clean_train_id = zip(*sorted(zip(train_label, clean_train_id)))
-    train_text = list(clean_train_id)
-    train_label = list(train_label)
-    train_label = multi_class_process([l for l in train_label], 2)
-    args.save_dir = args.save_dir[:-2]+'.sort.pt'
-else:
-    train_label = multi_class_process(train_label, 2)
+train_label = multi_class_process(train_label, 2)
 
 train_features = Padding(clean_train_id, 400)
-shuf=True
-if args.data_position == 'sort':
-    shuf = False
-X_train, X_remain, y_train, y_remain = train_test_split(train_features, train_label, test_size=0.2, random_state=1, shuffle=shuf)
+X_train, X_remain, y_train, y_remain = train_test_split(train_features, train_label, test_size=0.2, random_state=1)
 X_valid, X_test, y_valid, y_test = train_test_split(X_remain, y_remain, test_size=0.5, random_state=1)
+
+print('dataset information:')
+print('=====================')
+print('train size', len(X_train))
+print('valid size', len(X_valid))
+print('test size', len(X_test))
+print('=====================\n')
+
 
 # create tensor dataset
 train_data = TensorDataset(torch.from_numpy(X_train), torch.stack(y_train))

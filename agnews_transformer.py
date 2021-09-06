@@ -27,7 +27,7 @@ parser.add_argument('--lr', type=float, help='lr', default=0.001)
 parser.add_argument('--batch-size', type=int, help='batch-size', default=32)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
-parser.add_argument('--epoch', type=int, default=20)
+parser.add_argument('--epoch', type=int, default=5)
 
 # dir param
 parser.add_argument('--save-dir', type=str,
@@ -136,7 +136,7 @@ if args.pretrain_emb != 'none':
 else:
     w = None
 nhead = 6
-nlayers = 2
+nlayers = 3
 model = TransformerForCLS(args.vocab_size, args.emb_dim, args.hid_dim,
                           nhead, nlayers, class_num, pretrain=w)
 model = model.to(device)

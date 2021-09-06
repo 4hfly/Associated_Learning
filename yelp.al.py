@@ -32,10 +32,10 @@ parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 # training param
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
-parser.add_argument('--batch-size', type=int, help='batch-size', default=64)
+parser.add_argument('--batch-size', type=int, help='batch-size', default=32)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
-parser.add_argument('--epoch', type=int, default=40)
+parser.add_argument('--epoch', type=int, default=10)
 parser.add_argument('--class-num', type=int, default=5)
 
 parser.add_argument('--act', type=str,
@@ -200,3 +200,4 @@ T.run(epoch=args.epoch)
 T.eval()
 T.short_cut_emb()
 T.short_cut_l1()
+T.tsne_()

@@ -9,7 +9,8 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
 
 from utils import *
-
+import os
+os.environ["WANDB_SILENT"] = "true"
 stop_words = set(stopwords.words('english'))
 
 
@@ -81,7 +82,7 @@ valid_loader = DataLoader(valid_data, shuffle=False, batch_size=batch_size)
 class Cls(nn.Module):
     
     def __init__(
-        self, vocab_size, embedding_dim, hidden_dim, n_layers, class_num, drop_prob=0.5, pretrain=None
+        self, vocab_size, embedding_dim, hidden_dim, n_layers, class_num, drop_prob=0.1, pretrain=None
     ):
 
         super(Cls, self).__init__()
@@ -92,6 +93,7 @@ class Cls(nn.Module):
             self.embedding = nn.Embedding.from_pretrain(pretrain, freeze=False, padding_idx=0)
         else:
             self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        n_layers=2
         self.lstm = nn.LSTM(embedding_dim, hidden_dim, n_layers,
                             dropout=drop_prob, batch_first=True, bidirectional=True)
         self.dropout = nn.Dropout(0.1)

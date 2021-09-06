@@ -291,21 +291,6 @@ class TransfomerTrainer:
                 # wandb.log({"total loss": loss.item()})
                 loss.backward()
 
-                # if self.is_al:
-                #     nn.utils.clip_grad_norm_(
-                #         self.model.layer_1.parameters(), self.clip, error_if_nonfinite=True
-                #     )
-                #     nn.utils.clip_grad_norm_(
-                #         self.model.layer_1.parameters(), self.clip, error_if_nonfinite=True
-                #     )
-                #     total_emb_loss.append(emb_loss.item())
-                #     total_l1_loss.append(l1_loss.item())
-                #     total_l2_loss.append(l2_loss.item())
-                # else:
-                #     nn.utils.clip_grad_norm_(
-                #         self.model.parameters(), self.clip, error_if_nonfinite=True
-                #     )
-
                 total_loss.append(loss.item())
 
                 self.opt.step()
@@ -603,7 +588,7 @@ class ALTrainer:
 
         self.model = model
         project_name = save_dir.replace('/', '-')
-        wandb.init(project=project_name, entity='hibb')
+        wandb.init(project=project_name, entity='al-train')
         config = wandb.config
         wandb.watch(self.model)
 
@@ -967,7 +952,7 @@ class Trainer:
         self.model = model
 
         project_name = save_dir.replace('/', '-normal-')
-        wandb.init(project=project_name, entity='hibb')
+        wandb.init(project=project_name, entity='al-train')
         config = wandb.config
         wandb.watch(self.model)
         # self.opt = torch.optim.SGD(self.model.parameters(), lr=0.01, momentum=0.9)

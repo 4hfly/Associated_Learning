@@ -165,10 +165,10 @@ class EmbeddingAL(ALComponent):
         by = None
         dx = None
 
-        if num_embeddings[1] == 2:
-            self.output_dim = 1
-        else:
-            self.output_dim = num_embeddings[1]
+        # if num_embeddings[1] == 2:
+        #     self.output_dim = 1
+        # else:
+        self.output_dim = num_embeddings[1]
 
         dy = nn.Sequential(
             nn.Linear(embedding_dim[1], self.output_dim, bias=False),
