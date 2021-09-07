@@ -137,7 +137,7 @@ if args.pretrain_emb != 'none':
 else:
     w = None
 nhead = 6
-nlayers = 3
+nlayers = 2
 model = TransformerForCLS(args.vocab_size, args.emb_dim, args.hid_dim,
                           nhead, nlayers, class_num, pretrain=w)
 model = model.to(device)

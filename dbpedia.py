@@ -10,7 +10,9 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from classification.model import LSTMAL, EmbeddingAL
 from utils import *
+import os
 
+os.environ['WANDB_SILENT'] = 'true'
 stop_words = set(stopwords.words('english'))
 
 parser = argparse.ArgumentParser('Dbpedia Dataset for LSTM training')
@@ -28,7 +30,7 @@ parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 # training param
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
-parser.add_argument('--batch-size', type=int, help='batch-size', default=64)
+parser.add_argument('--batch-size', type=int, help='batch-size', default=128)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
 parser.add_argument('--epoch', type=int, default=20)
@@ -37,8 +39,8 @@ parser.add_argument('--class-num', type=int, default=14)
 parser.add_argument('--act', type=str,
                     default='tanh')
 parser.add_argument('--pretrain-emb', type=str, default='glove')
-parser.add_argument('--max-len', type=int, default=400)
-
+parser.add_argument('--max-len', type=int, default=500)
+parser.add_argument('--random-label', type=bool, default=False)
 # dir param
 parser.add_argument('--save-dir', type=str, default='ckpt/dbpedia.pt')
 
@@ -53,6 +55,11 @@ train_text = [b['content'] for b in news_train]
 train_label = multi_class_process([b['label'] for b in news_train], class_num)
 test_text = [b['content'] for b in new_test]
 test_label = multi_class_process([b['label'] for b in new_test], class_num)
+
+if args.random_label:
+    train_label = multi_class_process([random.randint(0,19) for _ in range(len(train_text))], class_num)
+    args.save_dir = args.save_dir[:-2]+'.rand.pt'
+    print('This is a random label test')
 
 clean_train = [data_preprocessing(t, True) for t in train_text]
 

@@ -102,7 +102,7 @@ class sentimentLSTM(nn.Module):
     The RNN model that will be used to perform Sentiment analysis.
     """
     
-    def __init__(self, vocab_size, embedding_dim, hidden_dim, n_layers, drop_prob=0.5, class_num=77, pretrain=None):
+    def __init__(self, vocab_size, embedding_dim, hidden_dim, n_layers, drop_prob=0.1, class_num=77, pretrain=None):
         """
         Initialize the model by setting up the layers.
         """
@@ -172,6 +172,6 @@ model = sentimentLSTM(args.vocab_size, args.emb_dim, args.hid_dim, 1, pretrain=p
 model = model.to(device)
 print('LSTM banking77 model param num', get_n_params(model))
 T = Trainer(model, args.lr, train_loader=train_loader, valid_loader=valid_loader, test_loader=test_loader, save_dir = args.save_dir, loss_w=dist)
-T.run(epochs=args.epoch)
-T.eval()
+# T.run(epochs=args.epoch)
+# T.eval()
 T.tsne_()

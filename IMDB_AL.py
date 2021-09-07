@@ -35,7 +35,7 @@ parser.add_argument('--lr', type=float, help='lr', default=0.001)
 parser.add_argument('--batch-size', type=int, help='batch-size', default=64)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
-parser.add_argument('--epoch', type=int, default=20)
+parser.add_argument('--epoch', type=int, default=5)
 
 # dir param
 parser.add_argument('--save-dir', type=str, default='ckpt/imdb.al.pt')
@@ -143,6 +143,6 @@ model = model.to(device)
 print('AL IMDB model param num', get_n_params(model))
 T = ALTrainer(model, args.lr, train_loader=train_loader,
               valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
-T.run(epoch=args.epoch)
-T.eval()
+# T.run(epoch=args.epoch)
+# T.eval()
 T.tsne_()

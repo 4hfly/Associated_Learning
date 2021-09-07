@@ -141,4 +141,4 @@ T = Trainer(model, args.lr, train_loader=train_loader,
               valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
 T.run(epochs=args.epoch)
 T.eval()
-T.tsne_()
+# T.tsne_()

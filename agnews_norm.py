@@ -131,6 +131,6 @@ model = model.to(device)
 print('agnews lstm model param num', get_n_params(model))
 T = Trainer(model, args.lr, train_loader=train_loader,
             valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
-T.run(epochs=args.epoch)
-T.eval()
+# T.run(epochs=args.epoch)
+# T.eval()
 T.tsne_()

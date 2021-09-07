@@ -272,7 +272,9 @@ class TransfomerTrainer:
                     emb_loss, l1_loss, l2_loss = self.model(
                         inputs, labels, src_key_padding_mask=masks
                     )
-
+                    total_emb_loss.append(emb_loss.item())
+                    total_l1_loss.append(l1_loss.item())
+                    total_l2_loss.append(l2_loss.item())
                     # wandb.log({"emb loss": emb_loss.item()})
                     # wandb.log({"lstm1 loss": l1_loss.item()})
                     # wandb.log({"lstm2 loss": l2_loss.item()})
@@ -636,6 +638,7 @@ class ALTrainer:
             print("GPU not available, CPU used")
 
         self.ckpt_epoch = 0
+        self.pat = 0
 
     def run(self, epoch):
 
@@ -790,11 +793,16 @@ class ALTrainer:
             wandb.log({"valid acc": epoch_val_acc})
 
             if epoch_val_acc >= self.valid_acc_min:
+                self.pat = 0
                 self.ckpt_epoch = epoch+1
                 torch.save(self.model.state_dict(), f'{self.save_dir}')
                 print('Validation acc increased ({:.6f} --> {:.6f}).  Saving model ...'.format(
                     self.valid_acc_min, epoch_val_acc))
                 self.valid_acc_min = epoch_val_acc
+            else:
+                self.pat +=1
+                if self.pat >4:
+                    break
             print(25*'==')
         final_dp = self.save_dir[:-3] + 'last.pth'
         torch.save(self.model.state_dict(), f'{final_dp}')
@@ -850,6 +858,7 @@ class ALTrainer:
         x = test_acc/test_count
         wandb.log({"test acc": x})
         print('Test acc', test_acc/test_count)
+        self.tsne_()
 
     def short_cut_emb(self):
 
@@ -947,6 +956,7 @@ class ALTrainer:
                 left = left[:, -1, :]
                 # left = left.reshape(left.size(1), -1)
                 right = self.model.layer_2.bx(left)
+                right = self.model.layer_2.dy(right)
                 right = right.cpu()
                 labels = labels.cpu()
                 # left = left.reshape(left.size(1), -1)
@@ -954,9 +964,9 @@ class ALTrainer:
                     all_feats.append(right[i, :].numpy())
                     all_labels.append(labels[i, :].argmax(-1).item())
 
-        tsne_plot_dir = self.save_dir[:-2]+'al.tsne.png'
+        tsne_plot_dir = self.save_dir[:-2]+'al2.tsne.png'
         tsne(all_feats, all_labels, class_num, tsne_plot_dir)
-        print('tsne saved in ', tsne_plot_dir)
+        # print('tsne saved in ', tsne_plot_dir)
 
 
 class Trainer:
@@ -998,6 +1008,7 @@ class Trainer:
             self.device = torch.device("cpu")
             print("GPU not available, CPU used")
 
+        self.pat = 0
         self.ckpt_epoch = 0
 
     def run(self, epochs):
@@ -1065,15 +1076,20 @@ class Trainer:
             wandb.log({"train acc": epoch_train_acc*100})
             wandb.log({"valid acc": epoch_val_acc*100})
             if epoch_val_acc >= self.valid_acc_min:
+                self.pat= 0
                 self.ckpt_epoch = epoch+1
                 torch.save(self.model.state_dict(), f'{self.save_dir}')
                 print('Validation acc increased ({:.6f} --> {:.6f}).  Saving model ...'.format(
                     self.valid_acc_min, epoch_val_acc))
                 self.valid_acc_min = epoch_val_acc
+            else:
+                self.pat +=1
+                if self.pat > 4:
+                    break
             print(25*'==')
         print('best valid acc', self.valid_acc_min)
         print('best checkpoint at', self.ckpt_epoch)
-
+    
     def eval(self):
         test_losses = []  # track loss
         num_correct = 0
@@ -1099,6 +1115,7 @@ class Trainer:
 
         test_acc = num_correct/test_count
         print("Test accuracy: {:.3f}".format(test_acc))
+        self.tsne_()
 
     def tsne_(self):
 
@@ -1121,6 +1138,5 @@ class Trainer:
                     all_feats.append(right[i, :].numpy())
                     all_labels.append(labels[i, :].argmax(-1).item())
 
-        tsne_plot_dir = self.save_dir[:-2]+'lstm.tsne.png'
+        # tsne_plot_dir = self.save_dir[:-2]+'lstm.tsne.png'
         tsne(all_feats, all_labels, class_num, tsne_plot_dir)
-        print('tsne saved in ', tsne_plot_dir)

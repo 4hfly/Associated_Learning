@@ -36,7 +36,7 @@ parser.add_argument('--epoch', type=int, default=20)
 
 # dir param
 parser.add_argument('--save-dir', type=str,
-                    default='ckpt/agnews_transformer.pt')
+                    default='ckpt/agnews_transformer.al.pt')
 
 args = parser.parse_args()
 
