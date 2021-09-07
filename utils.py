@@ -1084,7 +1084,7 @@ class Trainer:
                 self.valid_acc_min = epoch_val_acc
             else:
                 self.pat +=1
-                if self.pat > 4:
+                if self.pat > 20:
                     break
             print(25*'==')
         print('best valid acc', self.valid_acc_min)
