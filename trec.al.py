@@ -17,7 +17,7 @@ os.environ["WANDB_SILENT"] = "true"
 stop_words = set(stopwords.words('english'))
 
 
-parser = argparse.ArgumentParser('AGNews Dataset for AL training')
+parser = argparse.ArgumentParser('TREC QC Dataset for AL training')
 
 # model param
 parser.add_argument('--word-emb', type=int,
@@ -35,11 +35,11 @@ parser.add_argument('--lr', type=float, help='lr', default=0.001)
 parser.add_argument('--batch-size', type=int, help='batch-size', default=64)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
-parser.add_argument('--epoch', type=int, default=10)
-parser.add_argument('--class-num', type=int, default=4)
+parser.add_argument('--epoch', type=int, default=20)
+parser.add_argument('--class-num', type=int, default=6)
 
 # dir param
-parser.add_argument('--save-dir', type=str, default='ckpt/agnews_al.pt')
+parser.add_argument('--save-dir', type=str, default='ckpt/trec.al.pt')
 
 parser.add_argument('--act', type=str,
                     default='tanh')
@@ -48,17 +48,17 @@ parser.add_argument('--pretrain-emb', type=str, default='glove')
 args = parser.parse_args()
 
 
-news_train = load_dataset('ag_news', split='train')
-new_test = load_dataset('ag_news', split='test')
+news_train = load_dataset('trec', split='train')
+new_test = load_dataset('trec', split='test')
 
 # TODO: 這個也要加進 args 裡面。
-class_num = 4
+class_num = 5
 
 train_text = [b['text'] for b in news_train]
-train_label = multi_class_process([b['label'] for b in news_train], class_num)
+train_label = multi_class_process([b['label-coarse'] for b in news_train], class_num)
 
 test_text = [b['text'] for b in new_test]
-test_label = multi_class_process([b['label'] for b in new_test], class_num)
+test_label = multi_class_process([b['label-coarse'] for b in new_test], class_num)
 
 clean_train = [data_preprocessing(t) for t in train_text]
 clean_test = [data_preprocessing(t) for t in test_text]
@@ -152,7 +152,7 @@ l2 = LSTMAL(2 * args.l1_dim, args.l1_dim, (args.l2_dim,
                                            args.l2_dim), dropout=0., bidirectional=True, act=act)
 model = CLSAL(emb, l1, l2)
 model = model.to(device)
-print('AL agnews model param num', get_n_params(model))
+print('TREC model param num', get_n_params(model))
 T = ALTrainer(model, args.lr, train_loader=train_loader,
               valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
 T.run(epoch=args.epoch)

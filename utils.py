@@ -12,6 +12,7 @@ import wandb
 from nltk.corpus import stopwords
 from torchnlp.word_to_vector import FastText, GloVe
 
+from prettytable import PrettyTable
 from mi_tool import MI_Vis
 
 import wandb
@@ -20,6 +21,17 @@ from vis import tsne
 
 stop_words = set(stopwords.words('english'))
 
+def count_parameters(model):
+    table = PrettyTable(["Modules", "Parameters"])
+    total_params = 0
+    for name, parameter in model.named_parameters():
+        if not parameter.requires_grad: continue
+        param = parameter.numel()
+        table.add_row([name, param])
+        total_params+=param
+    print(table)
+    print(f"Total Trainable Params: {total_params}")
+    return total_params
 
 def get_act(args):
     if args.act == 'tanh':
@@ -36,6 +48,12 @@ def get_act(args):
         act = nn.ELU()
     elif args.act == 'gelu':
         act = nn.GELU()
+    elif args.act == 'prelu':
+        act = nn.PReLU()
+    elif args.act == 'selu':
+        act = nn.SELU()
+    elif args.act == 'tanhsh':
+        act = nn.Tanhshrink()
     else:
         act = None
     return act
@@ -701,7 +719,11 @@ class ALTrainer:
                     self.model.eval()
 
                     left = self.model.embedding.f(inputs)
+                    # left = self.model.ln(left)
+
                     output, hidden = self.model.layer_1.f(left)
+                    # output = self.model.ln2(output)
+
                     left, (output, c) = self.model.layer_2.f(output, hidden)
                     left = left[:, -1, :]
 
@@ -799,10 +821,6 @@ class ALTrainer:
                 print('Validation acc increased ({:.6f} --> {:.6f}).  Saving model ...'.format(
                     self.valid_acc_min, epoch_val_acc))
                 self.valid_acc_min = epoch_val_acc
-            else:
-                self.pat +=1
-                if self.pat >4:
-                    break
             print(25*'==')
         final_dp = self.save_dir[:-3] + 'last.pth'
         torch.save(self.model.state_dict(), f'{final_dp}')
@@ -1082,10 +1100,6 @@ class Trainer:
                 print('Validation acc increased ({:.6f} --> {:.6f}).  Saving model ...'.format(
                     self.valid_acc_min, epoch_val_acc))
                 self.valid_acc_min = epoch_val_acc
-            else:
-                self.pat +=1
-                if self.pat > 4:
-                    break
             print(25*'==')
         print('best valid acc', self.valid_acc_min)
         print('best checkpoint at', self.ckpt_epoch)
@@ -1138,5 +1152,5 @@ class Trainer:
                     all_feats.append(right[i, :].numpy())
                     all_labels.append(labels[i, :].argmax(-1).item())
 
-        # tsne_plot_dir = self.save_dir[:-2]+'lstm.tsne.png'
+        tsne_plot_dir = self.save_dir[:-2]+'lstm.tsne.png'
         tsne(all_feats, all_labels, class_num, tsne_plot_dir)
