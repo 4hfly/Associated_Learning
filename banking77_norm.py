@@ -38,7 +38,6 @@ parser.add_argument('--lr', type=float, help='lr', default=0.001)
 parser.add_argument('--batch-size', type=int, help='batch-size', default=64)
 parser.add_argument('--epoch', type=int, default=500)
 parser.add_argument('--data-position', type=str, help='shuffle or sort', default='shuffle')
-# parser.add_argument('--pretrain-emb', type=str, default='glove')
 
 # dir param
 parser.add_argument('--save-dir', type=str, default='ckpt/banking77.pt')
@@ -50,14 +49,6 @@ bank_test = load_dataset('banking77', split='test')
 
 train_text = [b['text'] for b in bank_train]
 train_label = multi_class_process([b['label'] for b in bank_train], 77)
-
-if args.data_position == 'sort':
-    train_label = [int(b['label']) for b in bank_train]
-    train_label, train_text = zip(*sorted(zip(train_label, train_text)))
-    train_text = list(train_text)
-    train_label = list(train_label)
-    train_label = multi_class_process([l for l in train_label], 77)
-    args.save_dir = args.save_dir[:-2]+'.sort.pt'
 
 label_dist = Counter([b['label'] for b in bank_train])
 test_text = [b['text'] for b in bank_test]
@@ -79,9 +70,7 @@ test_features = Padding(clean_test_id, max_len)
 
 print('train label num', len(train_label))
 shuf=True
-if args.data_position == 'sort':
-    shuf = False
-X_train, X_valid, y_train, y_valid = train_test_split(train_features, train_label, test_size=0.2, random_state=1, shuffle=shuf)
+X_train, X_valid, y_train, y_valid = train_test_split(train_features, train_label, test_size=0.2, random_state=1)
 X_test, y_test = test_features, test_label
 
 train_data = TensorDataset(torch.from_numpy(X_train), torch.stack(y_train))
@@ -102,7 +91,7 @@ class sentimentLSTM(nn.Module):
     The RNN model that will be used to perform Sentiment analysis.
     """
     
-    def __init__(self, vocab_size, embedding_dim, hidden_dim, n_layers, drop_prob=0.1, class_num=77, pretrain=None):
+    def __init__(self, vocab_size, embedding_dim, hidden_dim, n_layers, drop_prob=0.7, class_num=77, pretrain=None):
         """
         Initialize the model by setting up the layers.
         """
@@ -117,7 +106,7 @@ class sentimentLSTM(nn.Module):
             self.embedding = nn.Embedding.from_pretrained(pretrain, freeze=False, padding_idx=0)
         self.lstm = nn.LSTM(embedding_dim, hidden_dim, n_layers, dropout=drop_prob, batch_first=True, bidirectional=True)
         # Dropout layer
-        self.dropout = nn.Dropout(0.1)
+        self.dropout = nn.Dropout(0.7)
         # Linear and sigmoid layers
         self.fc = nn.Sequential(
             nn.Linear(hidden_dim*2, 400),
@@ -171,7 +160,9 @@ dist = F.normalize(dist,dim=0)
 model = sentimentLSTM(args.vocab_size, args.emb_dim, args.hid_dim, 1, pretrain=pretrain)
 model = model.to(device)
 print('LSTM banking77 model param num', get_n_params(model))
+raise Exception
+# raise Exception
 T = Trainer(model, args.lr, train_loader=train_loader, valid_loader=valid_loader, test_loader=test_loader, save_dir = args.save_dir, loss_w=dist)
-# T.run(epochs=args.epoch)
-# T.eval()
-T.tsne_()
+T.run(epochs=args.epoch)
+T.eval()
+# T.tsne_()

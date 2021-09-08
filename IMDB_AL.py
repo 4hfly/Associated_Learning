@@ -141,6 +141,7 @@ l2 = LSTMAL(2*args.l1_dim, args.l1_dim, (args.bridge_dim, args.bridge_dim), drop
 model = SentAL(emb, l1, l2)
 model = model.to(device)
 print('AL IMDB model param num', get_n_params(model))
+raise Exception
 T = ALTrainer(model, args.lr, train_loader=train_loader,
               valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
 # T.run(epoch=args.epoch)

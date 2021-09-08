@@ -14,7 +14,7 @@ os.environ["WANDB_SILENT"] = "true"
 stop_words = set(stopwords.words('english'))
 
 
-parser = argparse.ArgumentParser('AGNews Dataset for AL training')
+parser = argparse.ArgumentParser('AGNews Dataset for LSTM training')
 
 # model param
 parser.add_argument('--word-emb', type=int,

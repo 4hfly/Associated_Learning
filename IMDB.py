@@ -137,6 +137,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.cuda.empty_cache()
 model = model.to(device)
 print('IMDB LSTM model param num', get_n_params(model))
+raise Exception
 T = Trainer(model, args.lr, train_loader=train_loader,
               valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
 T.run(epochs=args.epoch)

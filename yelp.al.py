@@ -32,10 +32,10 @@ parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 # training param
 parser.add_argument('--lr', type=float, help='lr', default=0.001)
-parser.add_argument('--batch-size', type=int, help='batch-size', default=32)
+parser.add_argument('--batch-size', type=int, help='batch-size', default=64)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
-parser.add_argument('--epoch', type=int, default=10)
+parser.add_argument('--epoch', type=int, default=20)
 parser.add_argument('--class-num', type=int, default=5)
 
 parser.add_argument('--act', type=str,
@@ -129,6 +129,8 @@ class ClsAL(nn.Module):
         self.layer_1 = l1
         self.layer_2 = l2
         self.dropout = nn.Dropout(0.1)
+        # self.ln = nn.LayerNorm(400, 300)
+        # self.ln2 = nn.LayerNorm(400,400)
 
     def forward(self, x, y):
         
@@ -140,8 +142,10 @@ class ClsAL(nn.Module):
         emb_x, emb_y = self.dropout(emb_x), self.dropout(emb_y)
         # print(self.embedding._t_prime.shape, self.embedding.y.shape)
         emb_loss = self.embedding.loss()
+        # emb_x = self.ln(emb_x)
 
         layer_1_x, h1, layer_1_y = self.layer_1(emb_x.detach(), emb_y.detach())
+        # layer_1_x = self.ln2(layer_1_x)
         layer_1_x, layer_1_y = self.dropout(layer_1_x), self.dropout(layer_1_y)
 
         layer_1_loss = self.layer_1.loss()
@@ -198,6 +202,3 @@ T = ALTrainer(model, args.lr, train_loader=train_loader,
               valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
 T.run(epoch=args.epoch)
 T.eval()
-T.short_cut_emb()
-T.short_cut_l1()
-T.tsne_()
