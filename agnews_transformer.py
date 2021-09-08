@@ -8,6 +8,7 @@ from nltk.corpus import stopwords
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
 
+from transformer.encoder.utils import PositionalEncoding
 from utils import *
 
 stop_words = set(stopwords.words('english'))
@@ -90,14 +91,19 @@ class TransformerForCLS(nn.Module):
     ):
 
         super(TransformerForCLS, self).__init__()
+
         if pretrain == None:
             self.embedding = nn.Embedding(vocab_size, embedding_dim)
         else:
             self.embedding = nn.Embedding.from_pretrained(
                 pretrain, freeze=False, padding_idx=0)
-        layers = nn.TransformerEncoderLayer(
+
+        self.linear = nn.Linear(embedding_dim, embedding_dim)
+        self.layernorm = nn.LayerNorm(embedding_dim)
+        self.pos_encoder = PositionalEncoding(embedding_dim, dropout)
+        layer = nn.TransformerEncoderLayer(
             embedding_dim, nhead, hidden_dim, dropout, batch_first=True)
-        self.encoder = nn.TransformerEncoder(layers, nlayers)
+        self.encoder = nn.TransformerEncoder(layer, nlayers)
         self.fc = nn.Linear(embedding_dim, class_num)
         self.softmax = nn.Softmax(dim=1)
 
@@ -108,6 +114,9 @@ class TransformerForCLS(nn.Module):
         #     mask = self._generate_square_subsequent_mask(x).to(device)
 
         x = self.embedding(x)
+        # # positional encoding
+        # x = self.layernorm(self.linear(x))
+        # x = self.pos_encoder(x)
         output = self.encoder(x, src_mask, src_key_padding_mask).sum(dim=1)
         src_len = (src_key_padding_mask == 0).sum(dim=1)
         # fit the shape of output
