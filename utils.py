@@ -14,7 +14,7 @@ from torchnlp.word_to_vector import FastText, GloVe
 
 from prettytable import PrettyTable
 from mi_tool import MI_Vis
-
+import pandas as pd
 import wandb
 
 from vis import tsne
@@ -62,6 +62,7 @@ def get_act(args):
 def get_word_vector(vocab, emb='glove'):
     # vocab is a dictionary {word: word_id}
     w = []
+    find = 0
     if emb == 'glove':
         vector = GloVe(name='6B')
     elif emb == 'FastText' or emb == 'fasttext':
@@ -70,9 +71,10 @@ def get_word_vector(vocab, emb='glove'):
     for word in vocab.keys():
         try:
             w.append(vector[word])
+            find+=1
         except:
-            w.append(torch.zeros(300))
-
+            w.append(torch.rand(300))
+    print('found', find, 'words in', emb)
     return torch.stack(w, dim=0)
 
 
@@ -95,6 +97,7 @@ def acc(pred, label):
 def data_preprocessing(text, remove_stopword=False):
 
     text = text.lower()
+    text = re.sub(r"[^A-Za-z0-9(),!?\'\`]", " ", text)
     text = re.sub('<.*?>', '', text)
     text = ''.join([c for c in text if c not in string.punctuation])
     if remove_stopword:
@@ -876,7 +879,7 @@ class ALTrainer:
         x = test_acc/test_count
         wandb.log({"test acc": x})
         print('Test acc', test_acc/test_count)
-        self.tsne_()
+        # self.tsne_()
 
     def short_cut_emb(self):
 
@@ -990,7 +993,7 @@ class ALTrainer:
 class Trainer:
 
     def __init__(
-        self, model, lr, train_loader, valid_loader, test_loader, save_dir, label_num=None, loss_w=None
+        self, model, lr, train_loader, valid_loader, test_loader, save_dir, label_num=None, loss_w=None, only_pred=None
     ):
 
         # Still need a arg parser to pass arguments
@@ -1016,7 +1019,7 @@ class Trainer:
             self.cri = nn.CrossEntropyLoss(weight=loss_w.cuda())
         else:
             self.cri = nn.CrossEntropyLoss()
-        self.clip = 5
+        self.clip = 1
         is_cuda = torch.cuda.is_available()
 
         if is_cuda:
@@ -1044,7 +1047,7 @@ class Trainer:
             for inputs, labels in self.train_loader:
 
                 # NOTE: 吃 class 的 index，所以用 argmax。
-                labels = torch.argmax(labels.long(), dim=1)
+                # labels = torch.argmax(labels.long(), dim=1)
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
 
                 self.opt.zero_grad()
@@ -1066,7 +1069,6 @@ class Trainer:
             with torch.no_grad():
                 for inputs, labels in self.valid_loader:
 
-                    labels = torch.argmax(labels.long(), dim=1)
                     inputs, labels = inputs.to(
                         self.device), labels.to(self.device)
                     output, val_h = self.model(inputs)
@@ -1113,13 +1115,13 @@ class Trainer:
         # iterate over test data
         for inputs, labels in self.test_loader:
 
-            labels = torch.argmax(labels.long(), dim=1)
             inputs, labels = inputs.to(self.device), labels.to(self.device)
             output, test_h = self.model(inputs)
             # calculate loss
             test_loss = self.cri(output, labels)
             test_losses.append(test_loss.item())
             pred = output.argmax(-1)
+
             # correct_tensor = pred.eq(labels.float().view_as(pred))
             # correct = np.squeeze(correct_tensor.cpu().numpy())
             num_correct += (pred == labels.float()).sum().item()
@@ -1129,7 +1131,28 @@ class Trainer:
 
         test_acc = num_correct/test_count
         print("Test accuracy: {:.3f}".format(test_acc))
-        self.tsne_()
+        # self.tsne_()
+    def write_pred(self):
+        test_losses = []  # track loss
+        num_correct = 0
+        self.model.eval()
+        self.model.load_state_dict(torch.load(f'{self.save_dir}'))
+        test_count = 0
+        pred_list=[]
+        # iterate over test data
+        for inputs, labels in self.test_loader:
+
+            inputs, labels = inputs.to(self.device), labels.to(self.device)
+            output, test_h = self.model(inputs)
+            # calculate loss
+            # test_loss = self.cri(output, labels)
+            # test_losses.append(test_loss.item())
+            pred = output.argmax(-1)
+            pred_list = pred_list + pred.tolist()
+        tsv_name = self.save_dir[:-3]+'.tsv'
+        df = {'index':[i for i in range(len(pred_list))], 'prediction':pred_list}
+        df = pd.DataFrame(df)
+        df.to_csv(tsv_name, sep='\t',index=False)
 
     def tsne_(self):
 
