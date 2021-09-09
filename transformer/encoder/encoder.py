@@ -27,10 +27,10 @@ class Encoder(nn.Module):
 class TransformerEncoder(nn.Module):
     """The encoder of transformer
     Args:
-        `n_layers`: number of stacked encoder layers
         `d_model`: model dimension
         `d_ff`: hidden dimension of feed forward layer
         `n_heads`: number of heads of self-attention
+        `n_layers`: number of stacked encoder layers
         `dropout`: dropout rate, default 0.1
     """
 

@@ -21,17 +21,20 @@ from vis import tsne
 
 stop_words = set(stopwords.words('english'))
 
+
 def count_parameters(model):
     table = PrettyTable(["Modules", "Parameters"])
     total_params = 0
     for name, parameter in model.named_parameters():
-        if not parameter.requires_grad: continue
+        if not parameter.requires_grad:
+            continue
         param = parameter.numel()
         table.add_row([name, param])
-        total_params+=param
+        total_params += param
     print(table)
     print(f"Total Trainable Params: {total_params}")
     return total_params
+
 
 def get_act(args):
     if args.act == 'tanh':
@@ -287,7 +290,7 @@ class TransfomerTrainer:
 
                 if self.is_al:
 
-                    emb_loss, l1_loss, l2_loss = self.model(
+                    emb_loss, layers_loss = self.model(
                         inputs, labels, src_key_padding_mask=masks
                     )
                     total_emb_loss.append(emb_loss.item())
@@ -1094,7 +1097,7 @@ class Trainer:
             wandb.log({"train acc": epoch_train_acc*100})
             wandb.log({"valid acc": epoch_val_acc*100})
             if epoch_val_acc >= self.valid_acc_min:
-                self.pat= 0
+                self.pat = 0
                 self.ckpt_epoch = epoch+1
                 torch.save(self.model.state_dict(), f'{self.save_dir}')
                 print('Validation acc increased ({:.6f} --> {:.6f}).  Saving model ...'.format(
@@ -1103,7 +1106,7 @@ class Trainer:
             print(25*'==')
         print('best valid acc', self.valid_acc_min)
         print('best checkpoint at', self.ckpt_epoch)
-    
+
     def eval(self):
         test_losses = []  # track loss
         num_correct = 0

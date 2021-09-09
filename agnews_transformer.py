@@ -8,6 +8,7 @@ from nltk.corpus import stopwords
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
 
+from transformer.encoder import TransformerEncoder
 from transformer.encoder.utils import PositionalEncoding
 from utils import *
 
@@ -92,6 +93,8 @@ class TransformerForCLS(nn.Module):
 
         super(TransformerForCLS, self).__init__()
 
+        self.emb_dim = embedding_dim
+
         if pretrain == None:
             self.embedding = nn.Embedding(vocab_size, embedding_dim)
         else:
@@ -101,9 +104,8 @@ class TransformerForCLS(nn.Module):
         self.linear = nn.Linear(embedding_dim, embedding_dim)
         self.layernorm = nn.LayerNorm(embedding_dim)
         self.pos_encoder = PositionalEncoding(embedding_dim, dropout)
-        layer = nn.TransformerEncoderLayer(
-            embedding_dim, nhead, hidden_dim, dropout, batch_first=True)
-        self.encoder = nn.TransformerEncoder(layer, nlayers)
+        # batch first = True
+        self.encoder = TransformerEncoder(embedding_dim, hidden_dim, nhead, nlayers, dropout)
         self.fc = nn.Linear(embedding_dim, class_num)
         self.softmax = nn.Softmax(dim=1)
 
@@ -114,10 +116,11 @@ class TransformerForCLS(nn.Module):
         #     mask = self._generate_square_subsequent_mask(x).to(device)
 
         x = self.embedding(x)
-        # # positional encoding
-        # x = self.layernorm(self.linear(x))
+        # TODO: positional encoding
+        # import math
+        # x = x * math.sqrt(self.emb_dim)
         # x = self.pos_encoder(x)
-        output = self.encoder(x, src_mask, src_key_padding_mask).sum(dim=1)
+        output = self.encoder(x, src_key_padding_mask).sum(dim=1)
         src_len = (src_key_padding_mask == 0).sum(dim=1)
         # fit the shape of output
         src_len = torch.stack((src_len,) * output.size(1), dim=1)
@@ -146,7 +149,7 @@ if args.pretrain_emb != 'none':
 else:
     w = None
 nhead = 6
-nlayers = 2
+nlayers = 6
 model = TransformerForCLS(args.vocab_size, args.emb_dim, args.hid_dim,
                           nhead, nlayers, class_num, pretrain=w)
 model = model.to(device)

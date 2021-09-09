@@ -4,8 +4,9 @@ from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
-from torch import Tensor
 import torch.nn.functional as F
+from torch import Tensor
+from transformer.encoder import TransformerEncoder
 
 CONFIG = {
     "hidden_size": (128, 128),
@@ -394,9 +395,10 @@ class TransformerEncoderAL(ALComponent):
             act = nn.ELU()
 
         # TODO: pytorch v1.9.0 有 layer_norm_eps, batch_first 兩個參數，v1.8.1 沒有。
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model[0], nhead, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation, layer_norm_eps=layer_norm_eps, batch_first=batch_first)
-        f = nn.TransformerEncoder(encoder_layer, 1)
+        # encoder_layer = nn.TransformerEncoderLayer(
+        #     d_model[0], nhead, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation, layer_norm_eps=layer_norm_eps, batch_first=batch_first)
+        f = TransformerEncoder(
+            d_model[0], dim_feedforward, nhead, 1, dropout)
         g = nn.Sequential(
             nn.Linear(d_model[1], y_hidden, bias=False),
             act
@@ -424,7 +426,8 @@ class TransformerEncoderAL(ALComponent):
 
         if self.training:
 
-            self._s = self.f(x, src_mask, src_key_padding_mask)
+            # TODO: 自己寫的版本就少一個src_mask參數。
+            self._s = self.f(x, src_key_padding_mask)
             # self._s_prime = self.dx(self._s)
             self._t = self.g(y)
             self._t_prime = self.dy(self._t)
@@ -433,7 +436,7 @@ class TransformerEncoderAL(ALComponent):
         else:
 
             if not self.reverse:
-                self._s = self.f(x, src_mask, src_key_padding_mask)
+                self._s = self.f(x, src_key_padding_mask)
                 # self._t_prime = self.dy(self.bx(self._s))
                 return self._s.detach(), self._t_prime.detach()
             else:
