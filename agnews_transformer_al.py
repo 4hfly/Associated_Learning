@@ -23,7 +23,7 @@ parser.add_argument('--emb-dim', type=int,
 parser.add_argument('--label-dim', type=int,
                     help='label embedding dimension', default=128)
 parser.add_argument('--hid-dim', type=int,
-                    help='hidden dimension', default=510)
+                    help='hidden dimension', default=256)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 parser.add_argument('--act', type=str, default='tanh')
 
@@ -88,17 +88,17 @@ valid_loader = DataLoader(valid_data, shuffle=False, batch_size=batch_size)
 
 class TransformerForCLS(nn.Module):
 
-    def __init__(self, emb, *nlayers):
+    def __init__(self, emb, l1, module, n):
 
         super(TransformerForCLS, self).__init__()
         self.embedding = emb
-        self.layers = []
-        for l in nlayers:
-            self.layers.append(l)
+        self.layer_1 = l1
+        self.layers = nn.ModuleList([module for _ in range(n - 1)])
         self.dropout = nn.Dropout(0.1)
 
     def forward(self, x, y, src_mask=None, src_key_padding_mask=None):
 
+        layer_loss = []
         # if mask == None:
         #     device = x.device
         #     mask = self._generate_square_subsequent_mask(x).to(device)
@@ -106,12 +106,12 @@ class TransformerForCLS(nn.Module):
         emb_x, emb_y = self.dropout(emb_x), self.dropout(emb_y)
         emb_loss = self.embedding.loss()
 
-        layer_loss = []
-        out_x, out_y = self.layers[0](
-            emb_x.detach(), emb_y.detach(), src_mask, src_key_padding_mask)
-        layer_loss.append(self.layers[0].loss())
+        out_x, out_y = self.layer_1(
+            emb_x.detach(), emb_y.detach(), src_mask, src_key_padding_mask
+        )
+        layer_loss.append(self.layer_1.loss())
 
-        for l in self.layers[1:]:
+        for l in self.layers:
             out_x, out_y = l(out_x.detach(), out_y.detach(),
                              src_mask, src_key_padding_mask)
             layer_loss.append(l.loss())
@@ -143,12 +143,13 @@ else:
                                                      args.label_dim), lin=args.one_hot_label, pretrained=w, act=act)
 # TODO: 這裡 y 的 hidden size 也許需要再調整大小。
 nhead = 6
+nlayers = 6
 l1 = TransformerEncoderAL((args.emb_dim, args.label_dim), nhead,
                           args.hid_dim, args.hid_dim, dropout=0.1, batch_first=True, act=act)
-l2 = TransformerEncoderAL((args.emb_dim, args.hid_dim), nhead,
-                          args.hid_dim, args.hid_dim, dropout=0.1, batch_first=True, act=act)
+layer = TransformerEncoderAL((args.emb_dim, args.hid_dim), nhead,
+                             args.hid_dim, args.hid_dim, dropout=0.1, batch_first=True, act=act)
 
-model = TransformerForCLS(emb, l1, l2)
+model = TransformerForCLS(emb, l1, layer, nlayers)
 model = model.to(device)
 print('Transformer AL agnews model param num', get_n_params(model))
 T = TransfomerTrainer(model, args.lr, train_loader=train_loader,

@@ -273,8 +273,6 @@ class TransfomerTrainer:
 
             total_loss = []
             total_emb_loss = []
-            total_l1_loss = []
-            total_l2_loss = []
 
             total_acc = 0.0
             total_count = 0
@@ -293,9 +291,12 @@ class TransfomerTrainer:
                     emb_loss, layers_loss = self.model(
                         inputs, labels, src_key_padding_mask=masks
                     )
+
+                    loss = emb_loss
                     total_emb_loss.append(emb_loss.item())
-                    total_l1_loss.append(l1_loss.item())
-                    total_l2_loss.append(l2_loss.item())
+
+                    for l in layers_loss:
+                        loss += l
                     # wandb.log({"emb loss": emb_loss.item()})
                     # wandb.log({"lstm1 loss": l1_loss.item()})
                     # wandb.log({"lstm2 loss": l2_loss.item()})
@@ -305,8 +306,6 @@ class TransfomerTrainer:
                     # wandb.log({"lstm1 decode loss": self.model.layer_1.loss_d})
                     # wandb.log({"lstm2 bridge loss": self.model.layer_2.loss_b})
                     # wandb.log({"lstm2 decode loss": self.model.layer_2.loss_d})
-
-                    loss = emb_loss + l1_loss + l2_loss
 
                 else:
 
@@ -332,16 +331,18 @@ class TransfomerTrainer:
                         left = self.model.embedding.f(inputs)
                         left = self.model.layer_1.f(
                             left, src_key_padding_mask=masks)
-                        left = self.model.layer_2.f(
-                            left, src_key_padding_mask=masks)
+                        for l in self.model.layers:
+                            left = l.f(
+                                left, src_key_padding_mask=masks)
                         # mean pooling
                         left = left.sum(dim=1)
                         src_len = (masks == 0).sum(dim=1)
                         src_len = torch.stack((src_len,) * left.size(1), dim=1)
                         left = left / src_len
 
-                        right = self.model.layer_2.bx(left)
-                        right = self.model.layer_2.dy(right)
+                        right = self.model.layers[-1].bx(left)
+                        for l in self.model.layers:
+                            right = l.dy(right)
                         right = self.model.layer_1.dy(right)
 
                         if self.label_num == 2:
@@ -385,16 +386,18 @@ class TransfomerTrainer:
                         left = self.model.embedding.f(inputs)
                         left = self.model.layer_1.f(
                             left, src_key_padding_mask=masks)
-                        left = self.model.layer_2.f(
-                            left, src_key_padding_mask=masks)
+                        for l in self.model.layers:
+                            left = l.f(
+                                left, src_key_padding_mask=masks)
                         # mean pooling
                         left = left.sum(dim=1)
                         src_len = (masks == 0).sum(dim=1)
                         src_len = torch.stack((src_len,) * left.size(1), dim=1)
                         left = left / src_len
 
-                        right = self.model.layer_2.bx(left)
-                        right = self.model.layer_2.dy(right)
+                        right = self.model.layers[-1].bx(left)
+                        for l in self.model.layers:
+                            right = l.dy(right)
                         right = self.model.layer_1.dy(right)
 
                         if self.label_num == 2:
@@ -424,14 +427,14 @@ class TransfomerTrainer:
                     val_count += labels.size(0)
 
             epoch_train_loss = [np.mean(total_emb_loss), np.mean(
-                total_l1_loss), np.mean(total_l2_loss)]
+                total_loss), ]
             epoch_train_acc = total_acc/total_count
             epoch_val_acc = val_acc/val_count
 
             print(f'Epoch {epoch+1}')
             if self.is_al:
                 print(
-                    f'train_loss : emb loss {epoch_train_loss[0]}, layer1 loss {epoch_train_loss[1]}, layer2 loss {epoch_train_loss[2]}')
+                    f'train_loss : emb loss {epoch_train_loss[0]}, total loss {epoch_train_loss[1]}')
                 print(
                     f'train_accuracy : {epoch_train_acc*100} val_accuracy : {epoch_val_acc*100}')
             else:
@@ -470,18 +473,22 @@ class TransfomerTrainer:
 
                 if self.is_al:
 
-                    left = model.embedding.f(inputs)
-                    left = model.layer_1.f(left, src_key_padding_mask=masks)
-                    left = model.layer_2.f(left, src_key_padding_mask=masks)
+                    left = self.model.embedding.f(inputs)
+                    left = self.model.layer_1.f(
+                        left, src_key_padding_mask=masks)
+                    for l in self.layers:
+                        left = l.f(
+                            left, src_key_padding_mask=masks)
                     # mean pooling
                     left = left.sum(dim=1)
                     src_len = (masks == 0).sum(dim=1)
                     src_len = torch.stack((src_len,) * left.size(1), dim=1)
                     left = left / src_len
 
-                    right = model.layer_2.bx(left)
-                    right = model.layer_2.dy(right)
-                    right = model.layer_1.dy(right)
+                    right = self.model.layers[-1].bx(left)
+                    for l in self.layers:
+                        right = l.dy(right)
+                    right = self.model.layer_1.dy(right)
 
                     if self.label_num == 2:
                         predicted_label = torch.round(
