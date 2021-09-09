@@ -52,9 +52,9 @@ new_test = load_dataset('dbpedia_14', split='test')
 class_num = args.class_num
 
 train_text = [b['content'] for b in news_train]
-train_label = multi_class_process([b['label'] for b in news_train], class_num)
+train_label = [b['label'] for b in news_train]
 test_text = [b['content'] for b in new_test]
-test_label = multi_class_process([b['label'] for b in new_test], class_num)
+test_label = [b['label'] for b in new_test]
 
 if args.random_label:
     train_label = multi_class_process([random.randint(0,19) for _ in range(len(train_text))], class_num)

@@ -45,10 +45,10 @@ new_test = load_dataset('ag_news', split='test')
 class_num = 4
 
 train_text = [b['text'] for b in news_train]
-train_label = multi_class_process([b['label'] for b in news_train], class_num)
+train_label = [b['label'] for b in news_train]
 
 test_text = [b['text'] for b in new_test]
-test_label = multi_class_process([b['label'] for b in new_test], class_num)
+test_label = [b['label'] for b in new_test]
 
 clean_train = [data_preprocessing(t, True) for t in train_text]
 clean_test = [data_preprocessing(t, True) for t in test_text]
@@ -121,9 +121,12 @@ torch.cuda.empty_cache()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print('current using device:', device)
 
+args.vocab_size = len(vocab)
+
 if args.pretrain_emb == 'none': 
     model = Cls(args.vocab_size, args.word_emb, args.l1_dim, 2, args.class_num)
 else:
+    print('using pretrained word embeddings')
     w = get_word_vector(vocab, emb=args.pretrain_emb)
     model = Cls(args.vocab_size, args.word_emb, args.l1_dim, 2, args.class_num, pretrain=w)
 

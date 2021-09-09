@@ -58,7 +58,7 @@ clean_train_id = convert2id(clean_train, vocab)
 df['sentiment'] = df['sentiment'].apply(lambda x: 1 if x == 'positive' else 0)
 
 train_label = df['sentiment'].tolist()
-train_label = multi_class_process(train_label, 2)
+train_label = train_label
 
 train_features = Padding(clean_train_id, 400)
 X_train, X_remain, y_train, y_remain = train_test_split(train_features, train_label, test_size=0.2, random_state=1)
