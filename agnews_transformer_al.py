@@ -88,12 +88,13 @@ valid_loader = DataLoader(valid_data, shuffle=False, batch_size=batch_size)
 
 class TransformerForCLS(nn.Module):
 
-    def __init__(self, emb, l1, l2):
+    def __init__(self, emb, *nlayers):
 
         super(TransformerForCLS, self).__init__()
         self.embedding = emb
-        self.layer_1 = l1
-        self.layer_2 = l2
+        self.layers = []
+        for l in nlayers:
+            self.layers.append(l)
         self.dropout = nn.Dropout(0.1)
 
     def forward(self, x, y, src_mask=None, src_key_padding_mask=None):
@@ -105,15 +106,17 @@ class TransformerForCLS(nn.Module):
         emb_x, emb_y = self.dropout(emb_x), self.dropout(emb_y)
         emb_loss = self.embedding.loss()
 
-        layer_1_x, layer_1_y = self.layer_1(
+        layer_loss = []
+        out_x, out_y = self.layers[0](
             emb_x.detach(), emb_y.detach(), src_mask, src_key_padding_mask)
-        layer_1_loss = self.layer_1.loss()
+        layer_loss.append(self.layers[0].loss())
 
-        layer_2_x, layer_2_y = self.layer_2(
-            layer_1_x.detach(), layer_1_y.detach(), src_mask, src_key_padding_mask)
-        layer_2_loss = self.layer_2.loss()
+        for l in self.layers[1:]:
+            out_x, out_y = l(out_x.detach(), out_y.detach(),
+                             src_mask, src_key_padding_mask)
+            layer_loss.append(l.loss())
 
-        return emb_loss, layer_1_loss, layer_2_loss
+        return emb_loss, layer_loss
 
     def _generate_square_subsequent_mask(self, sz: int):
         """
@@ -125,6 +128,7 @@ class TransformerForCLS(nn.Module):
         mask = mask.float().masked_fill(mask == 0, float(
             '-inf')).masked_fill(mask == 1, float(0.0))
         return mask
+
 
 torch.cuda.empty_cache()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
