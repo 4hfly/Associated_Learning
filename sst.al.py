@@ -7,7 +7,7 @@ from datasets import load_dataset
 from nltk.corpus import stopwords
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
-
+from one_layer import L1_ALTrainer
 from classification.model import LSTMAL, EmbeddingAL
 from utils import *
 import os
@@ -48,24 +48,30 @@ parser.add_argument('--pretrain-emb', type=str, default='glove')
 args = parser.parse_args()
 
 
-news_train = load_dataset('sst', split='train')
-new_test = load_dataset('sst', split='test')
+news_train = load_dataset('glue', 'sst2', split='train')
+news_val = load_dataset('glue', 'sst2', split='validation')
+new_test = load_dataset('glue', 'sst2', split='test')
 
 # TODO: 這個也要加進 args 裡面。
 class_num = args.class_num
 
 train_text = [b['sentence'] for b in news_train]
-train_label = multi_class_process([int(round(b['label'],0)) for b in news_train], class_num)
+train_label = multi_class_process([b['label'] for b in news_train], class_num)
+
+val_text = [b['sentence'] for b in news_val]
+val_label = multi_class_process([b['label'] for b in news_val], class_num)
 
 test_text = [b['sentence'] for b in new_test]
-test_label = multi_class_process([int(round(b['label'],0)) for b in new_test], class_num)
+test_label = multi_class_process([b['label'] for b in new_test], class_num)
 
 clean_train = [data_preprocessing(t) for t in train_text]
+clean_val = [data_preprocessing(t) for t in val_text]
 clean_test = [data_preprocessing(t) for t in test_text]
 
 vocab = create_vocab(clean_train)
 
 clean_train_id = convert2id(clean_train, vocab)
+clean_val_id = convert2id(clean_val, vocab)
 clean_test_id = convert2id(clean_test, vocab)
 
 max_len = max([len(s) for s in clean_train_id])
@@ -73,9 +79,9 @@ print('max seq length', max_len)
 
 train_features = Padding(clean_train_id, max_len)
 test_features = Padding(clean_test_id, max_len)
+val_features = Padding(clean_val_id, max_len)
 
-X_train, X_valid, y_train, y_valid = train_test_split(
-    train_features, train_label, test_size=0.2, random_state=1)
+X_train, X_valid, y_train, y_valid = train_features, val_features, train_label, val_label
 X_test, y_test = test_features, test_label
 
 print('dataset information:')
@@ -104,11 +110,12 @@ class CLSAL(nn.Module):
 
         self.embedding = emb
         self.layer_1 = l1
-        self.layer_2 = l2
-        self.dropout = nn.Dropout(0.1)
+        # self.layer_2 = l2
+        self.dropout = nn.Dropout(0.3)
+        self.count = 0
 
     def forward(self, x, y):
-
+        self.count += 1
         batch_size = x.size(0)
         direction = 2
 
@@ -121,15 +128,7 @@ class CLSAL(nn.Module):
         layer_1_x, layer_1_y = self.dropout(layer_1_x), self.dropout(layer_1_y)
         layer_1_loss = self.layer_1.loss()
 
-        h, c = h1
-        h = h.reshape(direction, batch_size, -1)
-        h1 = (h.detach(), c.detach())
-
-        layer_2_x, h2, layer_2_y = self.layer_2(
-            layer_1_x.detach(), layer_1_y.detach(), h1)
-        layer_2_loss = self.layer_2.loss()
-
-        return emb_loss, layer_1_loss, layer_2_loss
+        return emb_loss, layer_1_loss
 
 
 act = get_act(args)
@@ -137,6 +136,8 @@ act = get_act(args)
 torch.cuda.empty_cache()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+args.vocab_size = len(vocab)
 
 if args.pretrain_emb == 'none':
     emb = EmbeddingAL((args.vocab_size, class_num), (args.word_emb,
@@ -154,9 +155,9 @@ model = CLSAL(emb, l1, l2)
 model = model.to(device)
 
 count_parameters(model)
-
-T = ALTrainer(model, args.lr, train_loader=train_loader,
+input('wait for input enter')
+T = L1_ALTrainer(model, args.lr, train_loader=train_loader,
               valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
 T.run(epoch=args.epoch)
-T.eval()
+T.write_pred()
 # T.tsne_()

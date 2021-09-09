@@ -136,6 +136,8 @@ act = get_act(args)
 
 torch.cuda.empty_cache()
 
+args.vocab_size = len(vocab)
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 if args.pretrain_emb == 'none':

@@ -10,6 +10,9 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from utils import *
 import os
+
+from one_layer import L1_ALTrainer
+
 os.environ["WANDB_SILENT"] = "true"
 stop_words = set(stopwords.words('english'))
 
@@ -20,7 +23,7 @@ parser = argparse.ArgumentParser('SSTDataset for LSTM training')
 parser.add_argument('--word-emb', type=int,
                     help='word embedding dimension', default=300)
 parser.add_argument('--l1-dim', type=int,
-                    help='lstm hidden dimension', default=400)
+                    help='lstm hidden dimension', default=350)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 # training param
@@ -38,24 +41,30 @@ parser.add_argument('--class-num', type=int, default=2)
 args = parser.parse_args()
 
 
-news_train = load_dataset('sst', split='train')
-new_test = load_dataset('sst', split='test')
+news_train = load_dataset('glue', 'sst2', split='train')
+news_val = load_dataset('glue', 'sst2', split='validation')
+new_test = load_dataset('glue', 'sst2', split='test')
 
 # TODO: 這個也要加進 args 裡面。
 class_num = args.class_num
 
 train_text = [b['sentence'] for b in news_train]
-train_label = multi_class_process([int(round(b['label'],0)) for b in news_train], class_num)
+train_label = [b['label'] for b in news_train]
+
+val_text = [b['sentence'] for b in news_val]
+val_label = [b['label'] for b in news_val]
 
 test_text = [b['sentence'] for b in new_test]
-test_label = multi_class_process([int(round(b['label'],0)) for b in new_test], class_num)
+test_label = [b['label'] for b in new_test]
 
-clean_train = [data_preprocessing(t, True) for t in train_text]
-clean_test = [data_preprocessing(t, True) for t in test_text]
+clean_train = [data_preprocessing(t) for t in train_text]
+clean_val = [data_preprocessing(t) for t in val_text]
+clean_test = [data_preprocessing(t) for t in test_text]
 
 vocab = create_vocab(clean_train)
 
 clean_train_id = convert2id(clean_train, vocab)
+clean_val_id = convert2id(clean_val, vocab)
 clean_test_id = convert2id(clean_test, vocab)
 
 max_len = max([len(s) for s in clean_train_id])
@@ -63,14 +72,14 @@ print('max seq length', max_len)
 
 train_features = Padding(clean_train_id, max_len)
 test_features = Padding(clean_test_id, max_len)
+val_features = Padding(clean_val_id, max_len)
 
-X_train, X_valid, y_train, y_valid = train_test_split(
-    train_features, train_label, test_size=0.2, random_state=1)
+X_train, X_valid, y_train, y_valid = train_features, val_features, train_label, val_label
 X_test, y_test = test_features, test_label
 
-train_data = TensorDataset(torch.from_numpy(X_train), torch.stack(y_train))
-test_data = TensorDataset(torch.from_numpy(X_test), torch.stack(y_test))
-valid_data = TensorDataset(torch.from_numpy(X_valid), torch.stack(y_valid))
+train_data = TensorDataset(torch.from_numpy(X_train), torch.tensor(y_train))
+test_data = TensorDataset(torch.from_numpy(X_test), torch.tensor(y_test))
+valid_data = TensorDataset(torch.from_numpy(X_valid), torch.tensor(y_valid))
 
 batch_size = args.batch_size
 
@@ -93,7 +102,7 @@ class Cls(nn.Module):
             self.embedding = nn.Embedding.from_pretrain(pretrain, freeze=False, padding_idx=0)
         else:
             self.embedding = nn.Embedding(vocab_size, embedding_dim)
-        n_layers=2
+
         self.lstm = nn.LSTM(embedding_dim, hidden_dim, n_layers,
                             dropout=drop_prob, batch_first=True, bidirectional=True)
         self.dropout = nn.Dropout(0.3)
@@ -106,29 +115,32 @@ class Cls(nn.Module):
     def forward(self, x):
 
         embeds = self.embedding(x)
-        lstm_out, hidden = self.lstm(embeds)
+        lstm_out, (h,c) = self.lstm(embeds)
         lstm_out = lstm_out[:, -1, :]
-        out = self.dropout(lstm_out)
-        out = self.fc(out)
+        out = self.fc(lstm_out)
         out = self.softmax(out)
-        return out, hidden
+        return out, h
 
 
 torch.cuda.empty_cache()
+
+args.vocab_size = len(vocab)
 
 # TODO: 這裡換成這樣就好
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print('current using device:', device)
 
 if args.pretrain_emb == 'none': 
-    model = Cls(args.vocab_size, args.word_emb, args.l1_dim, 2, args.class_num)
+    model = Cls(args.vocab_size, args.word_emb, args.l1_dim, 1, args.class_num)
 else:
     w = get_word_vector(vocab, emb=args.pretrain_emb)
-    model = Cls(args.vocab_size, args.word_emb, args.l1_dim, 2, args.class_num, pretrain=w)
+    model = Cls(args.vocab_size, args.word_emb, args.l1_dim, 1, args.class_num, pretrain=w)
 
 model = model.to(device)
 count_parameters(model)
+input('wait until input enter')
 T = Trainer(model, args.lr, train_loader=train_loader,
             valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
 T.run(epochs=args.epoch)
-T.eval()
+T.write_pred()
+# T.eval()
