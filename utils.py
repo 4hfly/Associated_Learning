@@ -74,7 +74,7 @@ def get_word_vector(vocab, emb='glove'):
     for word in vocab.keys():
         try:
             w.append(vector[word])
-            find+=1
+            find += 1
         except:
             w.append(torch.rand(300))
     print('found', find, 'words in', emb)
@@ -296,8 +296,6 @@ class TransfomerTrainer:
                     )
 
                     loss = emb_loss
-                    total_emb_loss.append(emb_loss.item())
-
                     for l in layers_loss:
                         loss += l
                     # wandb.log({"emb loss": emb_loss.item()})
@@ -318,7 +316,7 @@ class TransfomerTrainer:
 
                 # wandb.log({"total loss": loss.item()})
                 loss.backward()
-
+                total_emb_loss.append(emb_loss.item())
                 total_loss.append(loss.item())
 
                 self.opt.step()
@@ -333,20 +331,37 @@ class TransfomerTrainer:
 
                         left = self.model.embedding.f(inputs)
                         left = self.model.layer_1.f(
-                            left, src_key_padding_mask=masks)
+                            left, masks)
                         # NOTE: deprecated codes. for nn.Module list
                         # for l in self.model.layers:
                         #     left = l.f(
                         #         left, src_key_padding_mask=masks)
+                        left = self.model.layer_2.f(
+                            left, masks)
+                        left = self.model.layer_3.f(
+                            left, masks)
+                        left = self.model.layer_4.f(
+                            left, masks)
+                        left = self.model.layer_5.f(
+                            left, masks)
+                        left = self.model.layer_6.f(
+                            left, masks)
                         # mean pooling
                         left = left.sum(dim=1)
                         src_len = (masks == 0).sum(dim=1)
                         src_len = torch.stack((src_len,) * left.size(1), dim=1)
                         left = left / src_len
+                        right = self.model.layer_6.bx(left)
 
-                        right = self.model.layers[-1].bx(left)
-                        for l in self.model.layers:
-                            right = l.dy(right)
+                        # NOTE: deprecated codes. for nn.Module list
+                        # right = self.model.layers[-1].bx(left)
+                        # for l in self.model.layers:
+                        #     right = l.dy(right)
+                        right = self.model.layer_6.dy(right)
+                        right = self.model.layer_5.dy(right)
+                        right = self.model.layer_4.dy(right)
+                        right = self.model.layer_3.dy(right)
+                        right = self.model.layer_2.dy(right)
                         right = self.model.layer_1.dy(right)
 
                         if self.label_num == 2:
@@ -479,19 +494,37 @@ class TransfomerTrainer:
 
                     left = self.model.embedding.f(inputs)
                     left = self.model.layer_1.f(
-                        left, src_key_padding_mask=masks)
-                    for l in self.layers:
-                        left = l.f(
-                            left, src_key_padding_mask=masks)
+                        left, masks)
+                    # NOTE: deprecated codes. for nn.Module list
+                    # for l in self.model.layers:
+                    #     left = l.f(
+                    #         left, src_key_padding_mask=masks)
+                    left = self.model.layer_2.f(
+                        left, masks)
+                    left = self.model.layer_3.f(
+                        left, masks)
+                    left = self.model.layer_4.f(
+                        left, masks)
+                    left = self.model.layer_5.f(
+                        left, masks)
+                    left = self.model.layer_6.f(
+                        left, masks)
                     # mean pooling
                     left = left.sum(dim=1)
                     src_len = (masks == 0).sum(dim=1)
                     src_len = torch.stack((src_len,) * left.size(1), dim=1)
                     left = left / src_len
+                    right = self.model.layer_6.bx(left)
 
-                    right = self.model.layers[-1].bx(left)
-                    for l in self.layers:
-                        right = l.dy(right)
+                    # NOTE: deprecated codes. for nn.Module list
+                    # right = self.model.layers[-1].bx(left)
+                    # for l in self.model.layers:
+                    #     right = l.dy(right)
+                    right = self.model.layer_6.dy(right)
+                    right = self.model.layer_5.dy(right)
+                    right = self.model.layer_4.dy(right)
+                    right = self.model.layer_3.dy(right)
+                    right = self.model.layer_2.dy(right)
                     right = self.model.layer_1.dy(right)
 
                     if self.label_num == 2:
@@ -1143,13 +1176,14 @@ class Trainer:
         test_acc = num_correct/test_count
         print("Test accuracy: {:.3f}".format(test_acc))
         # self.tsne_()
+
     def write_pred(self):
         test_losses = []  # track loss
         num_correct = 0
         self.model.eval()
         self.model.load_state_dict(torch.load(f'{self.save_dir}'))
         test_count = 0
-        pred_list=[]
+        pred_list = []
         # iterate over test data
         for inputs, labels in self.test_loader:
 
@@ -1161,9 +1195,10 @@ class Trainer:
             pred = output.argmax(-1)
             pred_list = pred_list + pred.tolist()
         tsv_name = self.save_dir[:-3]+'.tsv'
-        df = {'index':[i for i in range(len(pred_list))], 'prediction':pred_list}
+        df = {'index': [i for i in range(
+            len(pred_list))], 'prediction': pred_list}
         df = pd.DataFrame(df)
-        df.to_csv(tsv_name, sep='\t',index=False)
+        df.to_csv(tsv_name, sep='\t', index=False)
 
     def tsne_(self):
 

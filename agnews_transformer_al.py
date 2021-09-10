@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import argparse
+import copy
 
 import torch
 import torch.nn as nn
@@ -88,12 +89,19 @@ valid_loader = DataLoader(valid_data, shuffle=False, batch_size=batch_size)
 
 class TransformerForCLS(nn.Module):
 
-    def __init__(self, emb, l1, module, n):
+    def __init__(self, emb, l1, l2, l3, l4, l5, l6):
 
         super(TransformerForCLS, self).__init__()
         self.embedding = emb
         self.layer_1 = l1
-        self.layers = nn.ModuleList([module for _ in range(n - 1)])
+        self.layer_2 = l2
+        self.layer_3 = l3
+        self.layer_4 = l4
+        self.layer_5 = l5
+        self.layer_6 = l6
+        # NOTE: still has some bugs.
+        # self.layers = nn.ModuleList([copy.deepcopy(module) for _ in range(n - 1)])
+
         self.dropout = nn.Dropout(0.1)
 
     def forward(self, x, y, src_mask=None, src_key_padding_mask=None):
@@ -111,10 +119,30 @@ class TransformerForCLS(nn.Module):
         )
         layer_loss.append(self.layer_1.loss())
 
-        for l in self.layers:
-            out_x, out_y = l(out_x.detach(), out_y.detach(),
-                             src_mask, src_key_padding_mask)
-            layer_loss.append(l.loss())
+        out_x, out_y = self.layer_2(
+            out_x.detach(), out_y.detach(), src_mask, src_key_padding_mask
+        )
+        layer_loss.append(self.layer_2.loss())
+
+        out_x, out_y = self.layer_3(
+            out_x.detach(), out_y.detach(), src_mask, src_key_padding_mask
+        )
+        layer_loss.append(self.layer_3.loss())
+
+        out_x, out_y = self.layer_4(
+            out_x.detach(), out_y.detach(), src_mask, src_key_padding_mask
+        )
+        layer_loss.append(self.layer_4.loss())
+
+        out_x, out_y = self.layer_5(
+            out_x.detach(), out_y.detach(), src_mask, src_key_padding_mask
+        )
+        layer_loss.append(self.layer_5.loss())
+
+        out_x, out_y = self.layer_6(
+            out_x.detach(), out_y.detach(), src_mask, src_key_padding_mask
+        )
+        layer_loss.append(self.layer_6.loss())
 
         return emb_loss, layer_loss
 
@@ -146,10 +174,18 @@ nhead = 6
 nlayers = 6
 l1 = TransformerEncoderAL((args.emb_dim, args.label_dim), nhead,
                           args.hid_dim, args.hid_dim, dropout=0.1, batch_first=True, act=act)
-layer = TransformerEncoderAL((args.emb_dim, args.hid_dim), nhead,
-                             args.hid_dim, args.hid_dim, dropout=0.1, batch_first=True, act=act)
+l2 = TransformerEncoderAL((args.emb_dim, args.hid_dim), nhead,
+                          args.hid_dim, args.hid_dim, dropout=0.1, batch_first=True, act=act)
+l3 = TransformerEncoderAL((args.emb_dim, args.hid_dim), nhead,
+                          args.hid_dim, args.hid_dim, dropout=0.1, batch_first=True, act=act)
+l4 = TransformerEncoderAL((args.emb_dim, args.hid_dim), nhead,
+                          args.hid_dim, args.hid_dim, dropout=0.1, batch_first=True, act=act)
+l5 = TransformerEncoderAL((args.emb_dim, args.hid_dim), nhead,
+                          args.hid_dim, args.hid_dim, dropout=0.1, batch_first=True, act=act)
+l6 = TransformerEncoderAL((args.emb_dim, args.hid_dim), nhead,
+                          args.hid_dim, args.hid_dim, dropout=0.1, batch_first=True, act=act)
 
-model = TransformerForCLS(emb, l1, layer, nlayers)
+model = TransformerForCLS(emb, l1, l2, l3, l4, l5, l6)
 model = model.to(device)
 print('Transformer AL agnews model param num', get_n_params(model))
 T = TransfomerTrainer(model, args.lr, train_loader=train_loader,

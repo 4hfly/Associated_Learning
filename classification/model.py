@@ -398,7 +398,8 @@ class TransformerEncoderAL(ALComponent):
         # encoder_layer = nn.TransformerEncoderLayer(
         #     d_model[0], nhead, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation, layer_norm_eps=layer_norm_eps, batch_first=batch_first)
         # f = nn.TransformerEncoder(encoder_layer, 1)
-        f = TransformerEncoder()
+        f = TransformerEncoder(
+            d_model[0], dim_feedforward, nhead, dropout=dropout)
         g = nn.Sequential(
             nn.Linear(d_model[1], y_hidden, bias=False),
             act
