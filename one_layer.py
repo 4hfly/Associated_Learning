@@ -14,7 +14,7 @@ from torchnlp.word_to_vector import FastText, GloVe
 
 from prettytable import PrettyTable
 from mi_tool import MI_Vis
-
+import pandas as pd
 import wandb
 
 
@@ -197,12 +197,12 @@ class L1_ALTrainer:
         pred_list=[]
         # iterate over test data
         for inputs, labels in self.test_loader:
-
-            left = model.embedding.f(inputs)
-            output, hidden = model.layer_1.f(left)
+            inputs, labels = inputs.to(self.device), labels.to(self.device)
+            left = self.model.embedding.f(inputs)
+            output, hidden = self.model.layer_1.f(left)
             left = output[:, -1, :]
-            right = model.layer_1.bx(left)
-            right = model.layer_1.dy(right)
+            right = self.model.layer_1.bx(left)
+            right = self.model.layer_1.dy(right)
 
             pred = self.model.embedding.dy(right).argmax(-1)
             pred_list = pred_list + pred.tolist()
