@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from transformer.encoder import TransformerEncoder
 from transformer.encoder.utils import PositionalEncoding
 from utils import *
-
+import math
 stop_words = set(stopwords.words('english'))
 
 
@@ -25,11 +25,11 @@ parser.add_argument('--hid-dim', type=int,
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 # training param
-parser.add_argument('--lr', type=float, help='lr', default=0.001)
-parser.add_argument('--batch-size', type=int, help='batch-size', default=32)
+parser.add_argument('--lr', type=float, help='lr', default=0.0001)
+parser.add_argument('--batch-size', type=int, help='batch-size', default=256)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
-parser.add_argument('--epoch', type=int, default=5)
+parser.add_argument('--epoch', type=int, default=40)
 
 # dir param
 parser.add_argument('--save-dir', type=str,
@@ -118,8 +118,8 @@ class TransformerForCLS(nn.Module):
         x = self.embedding(x)
         # TODO: positional encoding
         # import math
-        # x = x * math.sqrt(self.emb_dim)
-        # x = self.pos_encoder(x)
+        x = x * math.sqrt(self.emb_dim)
+        x = self.pos_encoder(x)
         output = self.encoder(x, src_key_padding_mask).sum(dim=1)
         src_len = (src_key_padding_mask == 0).sum(dim=1)
         # fit the shape of output
@@ -149,7 +149,7 @@ if args.pretrain_emb != 'none':
 else:
     w = None
 nhead = 6
-nlayers = 6
+nlayers = 4
 model = TransformerForCLS(args.vocab_size, args.emb_dim, args.hid_dim,
                           nhead, nlayers, class_num, pretrain=w)
 model = model.to(device)

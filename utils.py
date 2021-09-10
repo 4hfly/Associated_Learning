@@ -100,7 +100,7 @@ def acc(pred, label):
 def data_preprocessing(text, remove_stopword=False):
 
     text = text.lower()
-    text = re.sub(r"[^A-Za-z0-9(),!?\'\`]", " ", text)
+    # text = re.sub(r"[^A-Za-z0-9(),!?\'\`]", " ", text)
     text = re.sub('<.*?>', '', text)
     text = ''.join([c for c in text if c not in string.punctuation])
     if remove_stopword:
@@ -268,6 +268,8 @@ class TransfomerTrainer:
         else:
             self.device = torch.device("cpu")
             print("GPU not available, CPU used")
+
+        self.best=0
 
     def run(self, epoch):
 
@@ -449,6 +451,7 @@ class TransfomerTrainer:
                 print('Validation acc increased ({:.6f} --> {:.6f}).  Saving model ...'.format(
                     self.valid_acc_min, epoch_val_acc))
                 self.valid_acc_min = epoch_val_acc
+                self.best = epoch+1
             print(25*'==')
         final_dp = self.save_dir[:-3] + 'last.pth'
         torch.save(self.model.state_dict(), f'{final_dp}')

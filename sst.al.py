@@ -127,7 +127,6 @@ class CLSAL(nn.Module):
         layer_1_x, h1, layer_1_y = self.layer_1(emb_x.detach(), emb_y.detach())
         layer_1_x, layer_1_y = self.dropout(layer_1_x), self.dropout(layer_1_y)
         layer_1_loss = self.layer_1.loss()
-
         return emb_loss, layer_1_loss
 
 

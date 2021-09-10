@@ -20,7 +20,7 @@ parser = argparse.ArgumentParser('AGNews Dataset for LSTM training')
 parser.add_argument('--word-emb', type=int,
                     help='word embedding dimension', default=300)
 parser.add_argument('--l1-dim', type=int,
-                    help='lstm hidden dimension', default=400)
+                    help='lstm hidden dimension', default=500)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 
 # training param
@@ -68,9 +68,9 @@ X_train, X_valid, y_train, y_valid = train_test_split(
     train_features, train_label, test_size=0.2, random_state=1)
 X_test, y_test = test_features, test_label
 
-train_data = TensorDataset(torch.from_numpy(X_train), torch.stack(y_train))
-test_data = TensorDataset(torch.from_numpy(X_test), torch.stack(y_test))
-valid_data = TensorDataset(torch.from_numpy(X_valid), torch.stack(y_valid))
+train_data = TensorDataset(torch.from_numpy(X_train), torch.tensor(y_train))
+test_data = TensorDataset(torch.from_numpy(X_test), torch.tensor(y_test))
+valid_data = TensorDataset(torch.from_numpy(X_valid), torch.tensor(y_valid))
 
 batch_size = args.batch_size
 
@@ -93,7 +93,7 @@ class Cls(nn.Module):
             self.embedding = nn.Embedding.from_pretrain(pretrain, freeze=False, padding_idx=0)
         else:
             self.embedding = nn.Embedding(vocab_size, embedding_dim)
-        n_layers=2
+        n_layers=1
         self.lstm = nn.LSTM(embedding_dim, hidden_dim, n_layers,
                             dropout=drop_prob, batch_first=True, bidirectional=True)
         self.dropout = nn.Dropout(0.1)
@@ -124,16 +124,17 @@ print('current using device:', device)
 args.vocab_size = len(vocab)
 
 if args.pretrain_emb == 'none': 
-    model = Cls(args.vocab_size, args.word_emb, args.l1_dim, 2, args.class_num)
+    model = Cls(args.vocab_size, args.word_emb, args.l1_dim, 1, args.class_num)
 else:
     print('using pretrained word embeddings')
     w = get_word_vector(vocab, emb=args.pretrain_emb)
-    model = Cls(args.vocab_size, args.word_emb, args.l1_dim, 2, args.class_num, pretrain=w)
+    model = Cls(args.vocab_size, args.word_emb, args.l1_dim, 1, args.class_num, pretrain=w)
 
 model = model.to(device)
-print('agnews lstm model param num', get_n_params(model))
+count_parameters(model)
+input('wait for input')
 T = Trainer(model, args.lr, train_loader=train_loader,
             valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
-# T.run(epochs=args.epoch)
-# T.eval()
-T.tsne_()
+T.run(epochs=args.epoch)
+T.eval()
+# T.tsne_()
