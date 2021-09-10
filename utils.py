@@ -334,9 +334,10 @@ class TransfomerTrainer:
                         left = self.model.embedding.f(inputs)
                         left = self.model.layer_1.f(
                             left, src_key_padding_mask=masks)
-                        for l in self.model.layers:
-                            left = l.f(
-                                left, src_key_padding_mask=masks)
+                        # NOTE: deprecated codes. for nn.Module list
+                        # for l in self.model.layers:
+                        #     left = l.f(
+                        #         left, src_key_padding_mask=masks)
                         # mean pooling
                         left = left.sum(dim=1)
                         src_len = (masks == 0).sum(dim=1)
