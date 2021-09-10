@@ -269,7 +269,7 @@ class TransfomerTrainer:
             self.device = torch.device("cpu")
             print("GPU not available, CPU used")
 
-        self.best=0
+        self.best = 0
 
     def run(self, epoch):
 
@@ -406,20 +406,27 @@ class TransfomerTrainer:
 
                         left = self.model.embedding.f(inputs)
                         left = self.model.layer_1.f(
-                            left, src_key_padding_mask=masks)
-                        for l in self.model.layers:
-                            left = l.f(
-                                left, src_key_padding_mask=masks)
+                            left, masks)
+                        # NOTE: deprecated codes. for nn.Module list
+                        # for l in self.model.layers:
+                        #     left = l.f(
+                        #         left, src_key_padding_mask=masks)
+                        left = self.model.layer_2.f(
+                            left, masks)
+                        left = self.model.layer_3.f(
+                            left, masks)
+                        left = self.model.layer_4.f(
+                            left, masks)
+                        left = self.model.layer_5.f(
+                            left, masks)
+                        left = self.model.layer_6.f(
+                            left, masks)
                         # mean pooling
                         left = left.sum(dim=1)
                         src_len = (masks == 0).sum(dim=1)
                         src_len = torch.stack((src_len,) * left.size(1), dim=1)
                         left = left / src_len
-
-                        right = self.model.layers[-1].bx(left)
-                        for l in self.model.layers:
-                            right = l.dy(right)
-                        right = self.model.layer_1.dy(right)
+                        right = self.model.layer_6.bx(left)
 
                         if self.label_num == 2:
                             predicted_label = torch.round(
