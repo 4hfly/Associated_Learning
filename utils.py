@@ -334,21 +334,21 @@ class TransfomerTrainer:
 
                         left = self.model.embedding.f(inputs)
                         left = self.model.layer_1.f(
-                            left, masks)
+                            left, None, masks)
                         # NOTE: deprecated codes. for nn.Module list
                         # for l in self.model.layers:
                         #     left = l.f(
                         #         left, src_key_padding_mask=masks)
                         left = self.model.layer_2.f(
-                            left, masks)
+                            left, None, masks)
                         left = self.model.layer_3.f(
-                            left, masks)
+                            left, None, masks)
                         left = self.model.layer_4.f(
-                            left, masks)
+                            left, None, masks)
                         left = self.model.layer_5.f(
-                            left, masks)
+                            left, None, masks)
                         left = self.model.layer_6.f(
-                            left, masks)
+                            left, None, masks)
                         # mean pooling
                         left = left.sum(dim=1)
                         src_len = (masks == 0).sum(dim=1)
@@ -407,21 +407,21 @@ class TransfomerTrainer:
 
                         left = self.model.embedding.f(inputs)
                         left = self.model.layer_1.f(
-                            left, masks)
+                            left, None, masks)
                         # NOTE: deprecated codes. for nn.Module list
                         # for l in self.model.layers:
                         #     left = l.f(
                         #         left, src_key_padding_mask=masks)
                         left = self.model.layer_2.f(
-                            left, masks)
+                            left, None, masks)
                         left = self.model.layer_3.f(
-                            left, masks)
+                            left, None, masks)
                         left = self.model.layer_4.f(
-                            left, masks)
+                            left, None, masks)
                         left = self.model.layer_5.f(
-                            left, masks)
+                            left, None, masks)
                         left = self.model.layer_6.f(
-                            left, masks)
+                            left, None, masks)
                         # mean pooling
                         left = left.sum(dim=1)
                         src_len = (masks == 0).sum(dim=1)
@@ -505,21 +505,21 @@ class TransfomerTrainer:
 
                     left = self.model.embedding.f(inputs)
                     left = self.model.layer_1.f(
-                        left, masks)
+                        left, None, masks)
                     # NOTE: deprecated codes. for nn.Module list
                     # for l in self.model.layers:
                     #     left = l.f(
                     #         left, src_key_padding_mask=masks)
                     left = self.model.layer_2.f(
-                        left, masks)
+                        left, None, masks)
                     left = self.model.layer_3.f(
-                        left, masks)
+                        left, None, masks)
                     left = self.model.layer_4.f(
-                        left, masks)
+                        left, None, masks)
                     left = self.model.layer_5.f(
-                        left, masks)
+                        left, None, masks)
                     left = self.model.layer_6.f(
-                        left, masks)
+                        left, None, masks)
                     # mean pooling
                     left = left.sum(dim=1)
                     src_len = (masks == 0).sum(dim=1)
