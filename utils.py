@@ -297,6 +297,7 @@ class TransfomerTrainer:
                         inputs, labels, src_key_padding_mask=masks
                     )
 
+                    total_emb_loss.append(emb_loss.item())
                     loss = emb_loss
                     for l in layers_loss:
                         loss += l
@@ -312,13 +313,13 @@ class TransfomerTrainer:
 
                 else:
 
+                    # NOTE: 有需要用到 src_mask 的話再加上去即可。兩個寫法一樣。
                     outputs = self.model(inputs, src_key_padding_mask=masks)
                     loss = self.cri(
                         outputs, torch.argmax(labels.long(), dim=1))
 
                 # wandb.log({"total loss": loss.item()})
                 loss.backward()
-                total_emb_loss.append(emb_loss.item())
                 total_loss.append(loss.item())
 
                 self.opt.step()

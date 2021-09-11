@@ -33,7 +33,7 @@ parser.add_argument('--epoch', type=int, default=40)
 
 # dir param
 parser.add_argument('--save-dir', type=str,
-                    default='ckpt/agnews_transformer.pt')
+                    default='data/ckpt/agnews_transformer.pt')
 
 parser.add_argument('--pretrain-emb', type=str, default='glove')
 
@@ -104,8 +104,13 @@ class TransformerForCLS(nn.Module):
         self.linear = nn.Linear(embedding_dim, embedding_dim)
         self.layernorm = nn.LayerNorm(embedding_dim)
         self.pos_encoder = PositionalEncoding(embedding_dim, dropout)
-        # batch first = True
-        self.encoder = TransformerEncoder(embedding_dim, hidden_dim, nhead, nlayers, dropout)
+        encoder_layer = nn.TransformerEncoderLayer(
+            embedding_dim, nhead, hidden_dim, dropout=dropout, batch_first=True
+        )
+        self.encoder = nn.TransformerEncoder(encoder_layer, nlayers)
+        # NOTE: package 裡的 batch first = True
+        # self.encoder = TransformerEncoder(
+        #     embedding_dim, hidden_dim, nhead, nlayers, dropout)
         self.fc = nn.Linear(embedding_dim, class_num)
         self.softmax = nn.Softmax(dim=1)
 
@@ -116,11 +121,15 @@ class TransformerForCLS(nn.Module):
         #     mask = self._generate_square_subsequent_mask(x).to(device)
 
         x = self.embedding(x)
-        # TODO: positional encoding
-        # import math
+        # NOTE: positional encoding
+        # 乘上 math.sqrt(self.emb_dim) 是模仿別人的，可以改。
+        # remember to import math
         x = x * math.sqrt(self.emb_dim)
         x = self.pos_encoder(x)
-        output = self.encoder(x, src_key_padding_mask).sum(dim=1)
+        # NOTE: 假如是 transformer package 的，forward 參數只會有兩個，因此寫法是
+        # output = self.encoder(x, src_key_padding_mask).sum(dim=1)
+        # nn.Transformer 有三個參數，而 encoder 不需要 n*n 的 mask。
+        output = self.encoder(x, src_mask, src_key_padding_mask).sum(dim=1)
         src_len = (src_key_padding_mask == 0).sum(dim=1)
         # fit the shape of output
         src_len = torch.stack((src_len,) * output.size(1), dim=1)

@@ -395,6 +395,7 @@ class TransformerEncoderAL(ALComponent):
             act = nn.ELU()
 
         # TODO: pytorch v1.9.0 有 layer_norm_eps, batch_first 兩個參數，v1.8.1 沒有。
+        # NOTE:
         # encoder_layer = nn.TransformerEncoderLayer(
         #     d_model[0], nhead, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation, layer_norm_eps=layer_norm_eps, batch_first=batch_first)
         # f = nn.TransformerEncoder(encoder_layer, 1)
