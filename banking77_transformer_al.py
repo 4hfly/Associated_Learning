@@ -126,5 +126,5 @@ model = model.to(device)
 print('AL Transformer banking77 model param num', get_n_params(model))
 T = TransfomerTrainer(model, args.lr, train_loader=train_loader,
                       valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir)
-T.run(epoch=args.epoch)
+T.run(e=args.epoch)
 T.eval()

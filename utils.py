@@ -7,7 +7,6 @@ from itertools import count
 import numpy as np
 import torch
 import torch.nn as nn
-import torchnlp
 import wandb
 from nltk.corpus import stopwords
 from torchnlp.word_to_vector import FastText, GloVe
@@ -271,10 +270,10 @@ class TransfomerTrainer:
 
         self.best = 0
 
-    def run(self, epoch):
+    def run(self, epochs):
 
         self.valid_acc_min = -999
-        for epoch in range(epoch):
+        for e in range(epochs):
 
             total_loss = []
             total_emb_loss = []
@@ -460,7 +459,7 @@ class TransfomerTrainer:
             epoch_train_acc = total_acc/total_count
             epoch_val_acc = val_acc/val_count
 
-            print(f'Epoch {epoch+1}')
+            print(f'Epoch {e+1}')
             if self.is_al:
                 print(
                     f'train_loss : emb loss {epoch_train_loss[0]}, total loss {epoch_train_loss[1]}')
@@ -478,7 +477,7 @@ class TransfomerTrainer:
                 print('Validation acc increased ({:.6f} --> {:.6f}).  Saving model ...'.format(
                     self.valid_acc_min, epoch_val_acc))
                 self.valid_acc_min = epoch_val_acc
-                self.best = epoch+1
+                self.best = e+1
             print(25*'==')
         final_dp = self.save_dir[:-3] + 'last.pth'
         torch.save(self.model.state_dict(), f'{final_dp}')

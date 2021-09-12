@@ -24,16 +24,16 @@ parser.add_argument('--emb-dim', type=int,
 parser.add_argument('--label-dim', type=int,
                     help='label embedding dimension', default=128)
 parser.add_argument('--hid-dim', type=int,
-                    help='hidden dimension', default=256)
+                    help='hidden dimension', default=200)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 parser.add_argument('--act', type=str, default='tanh')
 
 # training param
-parser.add_argument('--lr', type=float, help='lr', default=0.001)
-parser.add_argument('--batch-size', type=int, help='batch-size', default=32)
+parser.add_argument('--lr', type=float, help='lr', default=0.0001)
+parser.add_argument('--batch-size', type=int, help='batch-size', default=128)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
-parser.add_argument('--epoch', type=int, default=20)
+parser.add_argument('--epoch', type=int, default=40)
 
 # dir param
 parser.add_argument('--save-dir', type=str,
@@ -190,5 +190,5 @@ model = model.to(device)
 print('Transformer AL agnews model param num', get_n_params(model))
 T = TransfomerTrainer(model, args.lr, train_loader=train_loader,
                       valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir, is_al=True)
-T.run(epoch=args.epoch)
+T.run(e=args.epoch)
 T.eval()

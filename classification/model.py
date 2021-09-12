@@ -4,7 +4,6 @@ from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch import Tensor
 from transformer.encoder import TransformerEncoder
 
@@ -468,7 +467,7 @@ class TransformerEncoderAL(ALComponent):
 def load_parameters():
 
     global CONFIG
-    with open("configs/hyperparams.json", "r", encoding="utf8") as f:
+    with open("configs/hyperparameters.json", "r", encoding="utf8") as f:
         CONFIG = json.load(f)
 
 

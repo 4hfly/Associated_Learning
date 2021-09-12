@@ -18,13 +18,13 @@ from utils import *
 #   `pretrained`: str | None，不建議用 'none'
 #   `activation`: str
 CONFIG = {
-    'Title': 'AGNews',
-    'dataset': 'ag_news',
+    'Title': 'Template',
+    'dataset': 'template',
     'Parameters': {
         'vocab_size': 30000,
         'pretrained': 'glove',
         'embedding_dim': 300,
-        'hidden_dim': 1024,
+        'hidden_dim': 512,
         'nhead': 6,
         'nlayers': 4,
         'class_num': 4,
@@ -117,7 +117,7 @@ def arg_parser():
     '''CONFIG 轉為 class 後可棄用'''
 
     t = CONFIG['Title']
-    parser = argparse.ArgumentParser(f'{t} for Transformer training')
+    parser = argparse.ArgumentParser(f'{t} for Transformer training.')
 
     # NOTE: args 的 prog name 有些和慣用的不一樣。
     # model param
@@ -156,7 +156,7 @@ def arg_parser():
         default=CONFIG['Parameters']['class_num']
     )
     parser.add_argument(
-        '--activation', type=str,
+        '--activation', type=int,
         help='activation',
         default=CONFIG['Parameters']['activation']
     )
