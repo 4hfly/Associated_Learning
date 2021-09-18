@@ -387,7 +387,8 @@ class TransformerEncoderAL(ALComponent):
         activation: str = "relu",
         layer_norm_eps: float = 1e-5,
         batch_first: bool = True,
-        act: nn.Module = None
+        act: nn.Module = None,
+        cri: nn.Module = None
     ) -> None:
 
         if act == None:
@@ -405,17 +406,20 @@ class TransformerEncoderAL(ALComponent):
             nn.Linear(d_model[1], y_hidden, bias=False),
             act
         )
-        bx = nn.Sequential(
-            nn.Linear(d_model[0], y_hidden, bias=False),
-            act
-        )
+        # NOTE: transformer decoder bridge
+        decoder_layer = nn.TransformerEncoderLayer(
+            d_model[0], nhead, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation, layer_norm_eps=layer_norm_eps, batch_first=batch_first)
+        bx = nn.TransformerDecoder(decoder_layer, 1)
         by = None
         dx = None
         dy = nn.Sequential(
             nn.Linear(y_hidden, d_model[1], bias=False),
             act
         )
-        cb = nn.MSELoss(reduction='mean')
+        if cri:
+            cb = cri
+        else:
+            cb = nn.MSELoss(reduction='mean')
         ca = nn.MSELoss(reduction='mean')
 
         super().__init__(f, g, bx, by, dx, dy, cb, ca, reverse=False)
@@ -430,6 +434,13 @@ class TransformerEncoderAL(ALComponent):
 
             # NOTE: 自己寫的版本就少一個src_mask參數。
             self._s = self.f(x, src_mask, src_key_padding_mask)
+
+            # NOTE: n*n mask. x[1] == src_len
+            if src_mask == None:
+                device = x.device
+                src_mask = self._generate_square_subsequent_mask(x[1]).to(device)
+
+            self._s_prime = self.bx(x, src_mask, src_key_padding_mask)
             # self._s_prime = self.dx(self._s)
             self._t = self.g(y)
             self._t_prime = self.dy(self._t)
@@ -449,19 +460,30 @@ class TransformerEncoderAL(ALComponent):
     def loss(self):
 
         # NOTE: v1.8.1 預設 batch_first = False。
-        p = self._s
+        p = self._s_prime
         q = self._t
 
         p_nonzero = (p != 0.).sum(dim=1)
         p = p.sum(dim=1) / p_nonzero
 
         if not self.reverse:
-            loss_b = self.criterion_br(self.bx(p), q)
+            loss_b = self.criterion_br(p, q)
             loss_d = self.criterion_ae(self._t_prime, self.y)
         else:
             raise Exception()
 
         return loss_b + loss_d
+
+    def _generate_square_subsequent_mask(self, sz: int):
+        """
+        Generate a square mask for the sequence. The masked positions are filled with float('-inf').
+        Unmasked positions are filled with float(0.0).
+        Shape: (sz, sz).
+        """
+        mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
+        mask = mask.float().masked_fill(mask == 0, float(
+            '-inf')).masked_fill(mask == 1, float(0.0))
+        return mask
 
 
 def load_parameters():

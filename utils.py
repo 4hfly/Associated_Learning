@@ -340,29 +340,29 @@ class TransfomerTrainer:
                         #         left, src_key_padding_mask=masks)
                         left = self.model.layer_2.f(
                             left, None, masks)
-                        left = self.model.layer_3.f(
-                            left, None, masks)
-                        left = self.model.layer_4.f(
-                            left, None, masks)
-                        left = self.model.layer_5.f(
-                            left, None, masks)
-                        left = self.model.layer_6.f(
-                            left, None, masks)
+                        # left = self.model.layer_3.f(
+                        #     left, None, masks)
+                        # left = self.model.layer_4.f(
+                        #     left, None, masks)
+                        # left = self.model.layer_5.f(
+                        #     left, None, masks)
+                        # left = self.model.layer_6.f(
+                        #     left, None, masks)
                         # mean pooling
                         left = left.sum(dim=1)
                         src_len = (masks == 0).sum(dim=1)
                         src_len = torch.stack((src_len,) * left.size(1), dim=1)
                         left = left / src_len
-                        right = self.model.layer_6.bx(left)
+                        right = self.model.layer_2.bx(left)
 
                         # NOTE: deprecated codes. for nn.Module list
                         # right = self.model.layers[-1].bx(left)
                         # for l in self.model.layers:
                         #     right = l.dy(right)
-                        right = self.model.layer_6.dy(right)
-                        right = self.model.layer_5.dy(right)
-                        right = self.model.layer_4.dy(right)
-                        right = self.model.layer_3.dy(right)
+                        # right = self.model.layer_6.dy(right)
+                        # right = self.model.layer_5.dy(right)
+                        # right = self.model.layer_4.dy(right)
+                        # right = self.model.layer_3.dy(right)
                         right = self.model.layer_2.dy(right)
                         right = self.model.layer_1.dy(right)
 
@@ -413,20 +413,31 @@ class TransfomerTrainer:
                         #         left, src_key_padding_mask=masks)
                         left = self.model.layer_2.f(
                             left, None, masks)
-                        left = self.model.layer_3.f(
-                            left, None, masks)
-                        left = self.model.layer_4.f(
-                            left, None, masks)
-                        left = self.model.layer_5.f(
-                            left, None, masks)
-                        left = self.model.layer_6.f(
-                            left, None, masks)
+                        # left = self.model.layer_3.f(
+                        #     left, None, masks)
+                        # left = self.model.layer_4.f(
+                        #     left, None, masks)
+                        # left = self.model.layer_5.f(
+                        #     left, None, masks)
+                        # left = self.model.layer_6.f(
+                        #     left, None, masks)
                         # mean pooling
                         left = left.sum(dim=1)
                         src_len = (masks == 0).sum(dim=1)
                         src_len = torch.stack((src_len,) * left.size(1), dim=1)
                         left = left / src_len
-                        right = self.model.layer_6.bx(left)
+                        right = self.model.layer_2.bx(left)
+
+                        # NOTE: deprecated codes. for nn.Module list
+                        # right = self.model.layers[-1].bx(left)
+                        # for l in self.model.layers:
+                        #     right = l.dy(right)
+                        # right = self.model.layer_6.dy(right)
+                        # right = self.model.layer_5.dy(right)
+                        # right = self.model.layer_4.dy(right)
+                        # right = self.model.layer_3.dy(right)
+                        right = self.model.layer_2.dy(right)
+                        right = self.model.layer_1.dy(right)
 
                         if self.label_num == 2:
                             predicted_label = torch.round(
@@ -511,29 +522,29 @@ class TransfomerTrainer:
                     #         left, src_key_padding_mask=masks)
                     left = self.model.layer_2.f(
                         left, None, masks)
-                    left = self.model.layer_3.f(
-                        left, None, masks)
-                    left = self.model.layer_4.f(
-                        left, None, masks)
-                    left = self.model.layer_5.f(
-                        left, None, masks)
-                    left = self.model.layer_6.f(
-                        left, None, masks)
+                    # left = self.model.layer_3.f(
+                    #     left, None, masks)
+                    # left = self.model.layer_4.f(
+                    #     left, None, masks)
+                    # left = self.model.layer_5.f(
+                    #     left, None, masks)
+                    # left = self.model.layer_6.f(
+                    #     left, None, masks)
                     # mean pooling
                     left = left.sum(dim=1)
                     src_len = (masks == 0).sum(dim=1)
                     src_len = torch.stack((src_len,) * left.size(1), dim=1)
                     left = left / src_len
-                    right = self.model.layer_6.bx(left)
+                    right = self.model.layer_2.bx(left)
 
                     # NOTE: deprecated codes. for nn.Module list
                     # right = self.model.layers[-1].bx(left)
                     # for l in self.model.layers:
                     #     right = l.dy(right)
-                    right = self.model.layer_6.dy(right)
-                    right = self.model.layer_5.dy(right)
-                    right = self.model.layer_4.dy(right)
-                    right = self.model.layer_3.dy(right)
+                    # right = self.model.layer_6.dy(right)
+                    # right = self.model.layer_5.dy(right)
+                    # right = self.model.layer_4.dy(right)
+                    # right = self.model.layer_3.dy(right)
                     right = self.model.layer_2.dy(right)
                     right = self.model.layer_1.dy(right)
 

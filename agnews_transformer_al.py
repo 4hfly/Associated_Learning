@@ -24,20 +24,20 @@ parser.add_argument('--emb-dim', type=int,
 parser.add_argument('--label-dim', type=int,
                     help='label embedding dimension', default=128)
 parser.add_argument('--hid-dim', type=int,
-                    help='hidden dimension', default=200)
+                    help='hidden dimension', default=256)
 parser.add_argument('--vocab-size', type=int, help='vocab-size', default=30000)
 parser.add_argument('--act', type=str, default='tanh')
 
 # training param
-parser.add_argument('--lr', type=float, help='lr', default=0.0001)
-parser.add_argument('--batch-size', type=int, help='batch-size', default=128)
+parser.add_argument('--lr', type=float, help='lr', default=0.001)
+parser.add_argument('--batch-size', type=int, help='batch-size', default=256)
 parser.add_argument('--one-hot-label', type=bool,
                     help='if true then use one-hot vector as label input, else integer', default=True)
 parser.add_argument('--epoch', type=int, default=40)
 
 # dir param
 parser.add_argument('--save-dir', type=str,
-                    default='ckpt/agnews_transformer.al.pt')
+                    default='data/ckpt/agnews_transformer.al.pt')
 
 args = parser.parse_args()
 
@@ -95,10 +95,10 @@ class TransformerForCLS(nn.Module):
         self.embedding = emb
         self.layer_1 = l1
         self.layer_2 = l2
-        self.layer_3 = l3
-        self.layer_4 = l4
-        self.layer_5 = l5
-        self.layer_6 = l6
+        # self.layer_3 = l3
+        # self.layer_4 = l4
+        # self.layer_5 = l5
+        # self.layer_6 = l6
         # NOTE: still has some bugs.
         # self.layers = nn.ModuleList([copy.deepcopy(module) for _ in range(n - 1)])
 
@@ -124,25 +124,25 @@ class TransformerForCLS(nn.Module):
         )
         layer_loss.append(self.layer_2.loss())
 
-        out_x, out_y = self.layer_3(
-            out_x.detach(), out_y.detach(), src_mask, src_key_padding_mask
-        )
-        layer_loss.append(self.layer_3.loss())
+        # out_x, out_y = self.layer_3(
+        #     out_x.detach(), out_y.detach(), src_mask, src_key_padding_mask
+        # )
+        # layer_loss.append(self.layer_3.loss())
 
-        out_x, out_y = self.layer_4(
-            out_x.detach(), out_y.detach(), src_mask, src_key_padding_mask
-        )
-        layer_loss.append(self.layer_4.loss())
+        # out_x, out_y = self.layer_4(
+        #     out_x.detach(), out_y.detach(), src_mask, src_key_padding_mask
+        # )
+        # layer_loss.append(self.layer_4.loss())
 
-        out_x, out_y = self.layer_5(
-            out_x.detach(), out_y.detach(), src_mask, src_key_padding_mask
-        )
-        layer_loss.append(self.layer_5.loss())
+        # out_x, out_y = self.layer_5(
+        #     out_x.detach(), out_y.detach(), src_mask, src_key_padding_mask
+        # )
+        # layer_loss.append(self.layer_5.loss())
 
-        out_x, out_y = self.layer_6(
-            out_x.detach(), out_y.detach(), src_mask, src_key_padding_mask
-        )
-        layer_loss.append(self.layer_6.loss())
+        # out_x, out_y = self.layer_6(
+        #     out_x.detach(), out_y.detach(), src_mask, src_key_padding_mask
+        # )
+        # layer_loss.append(self.layer_6.loss())
 
         return emb_loss, layer_loss
 
@@ -171,7 +171,6 @@ else:
                                                      args.label_dim), lin=args.one_hot_label, pretrained=w, act=act)
 # TODO: 這裡 y 的 hidden size 也許需要再調整大小。
 nhead = 6
-nlayers = 6
 l1 = TransformerEncoderAL((args.emb_dim, args.label_dim), nhead,
                           args.hid_dim, args.hid_dim, dropout=0.1, batch_first=True, act=act)
 l2 = TransformerEncoderAL((args.emb_dim, args.hid_dim), nhead,
@@ -190,5 +189,5 @@ model = model.to(device)
 print('Transformer AL agnews model param num', get_n_params(model))
 T = TransfomerTrainer(model, args.lr, train_loader=train_loader,
                       valid_loader=valid_loader, test_loader=test_loader, save_dir=args.save_dir, is_al=True)
-T.run(e=args.epoch)
+T.run(epochs=args.epoch)
 T.eval()
