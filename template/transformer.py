@@ -87,7 +87,7 @@ class TransformerForCLS(nn.Module):
         # NOTE: n*n mask. 9.18
         if src_mask == None:
             device = x.device
-            src_mask = self._generate_square_subsequent_mask(x[1]).to(device)
+            src_mask = self._generate_square_subsequent_mask(x.size(1)).to(device)
 
         x = self.embedding(x)
         # NOTE: positional encoding.
