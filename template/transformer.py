@@ -84,24 +84,23 @@ class TransformerForCLS(nn.Module):
 
     def forward(self, x, src_mask=None, src_key_padding_mask=None):
 
-        # NOTE: n*n mask. 9.18
-        if src_mask == None:
-            device = x.device
-            src_mask = self._generate_square_subsequent_mask(x.size(1)).to(device)
-
         x = self.embedding(x)
         # NOTE: positional encoding.
         # 乘上 math.sqrt(self.emb_dim) 是模仿別人的，可以改。
         x = x * math.sqrt(self.emb_dim)
         x = self.pos_encoder(x)
-        
+
         # NOTE: 假如是 transformer package 的，forward 參數只會有兩個，因此寫法是
         # output = self.encoder(x, src_key_padding_mask).sum(dim=1)
         # nn.Transformer 有三個參數，而 encoder 不需要 n*n 的 mask。
         output = self.encoder(x, src_mask, src_key_padding_mask)
 
         # NOTE: 9.18
-        output = self.decoder(output, src_mask, src_key_padding_mask)
+        device = output.device
+        tgt_mask = self._generate_square_subsequent_mask(
+            output.size(1)).to(device)
+        output = self.decoder(x, output, tgt_mask, tgt_key_padding_mask=src_key_padding_mask,
+                              memory_key_padding_mask=src_key_padding_mask)
         output = output.sum(dim=1)
 
         src_len = (src_key_padding_mask == 0).sum(dim=1)
