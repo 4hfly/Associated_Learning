@@ -407,9 +407,12 @@ class TransformerEncoderAL(ALComponent):
             act
         )
         # NOTE: transformer decoder bridge
-        decoder_layer = nn.TransformerEncoderLayer(
-            d_model[0], nhead, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation, layer_norm_eps=layer_norm_eps, batch_first=batch_first)
-        bx = nn.TransformerDecoder(decoder_layer, 1)
+        # decoder_layer = nn.TransformerEncoderLayer(
+        #     d_model[0], nhead, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation, layer_norm_eps=layer_norm_eps, batch_first=batch_first)
+        bx = nn.Sequential(
+            nn.Linear(d_model[0], y_hidden, bias=False),
+            act
+        )
         by = None
         dx = None
         dy = nn.Sequential(
@@ -434,13 +437,11 @@ class TransformerEncoderAL(ALComponent):
 
             # NOTE: 自己寫的版本就少一個src_mask參數。
             self._s = self.f(x, src_mask, src_key_padding_mask)
-
-            # NOTE: n*n mask. x[1] == src_len
-            if src_mask == None:
-                device = x.device
-                src_mask = self._generate_square_subsequent_mask(x[1]).to(device)
-
-            self._s_prime = self.bx(x, src_mask, src_key_padding_mask)
+            # NOTE: n*n mask. x.size(1) == src_len
+            # device = x.device
+            # tgt_mask = self._generate_square_subsequent_mask(
+            #     x.size(1)).to(device)
+            self._s_prime = self.bx(self._s)
             # self._s_prime = self.dx(self._s)
             self._t = self.g(y)
             self._t_prime = self.dy(self._t)
@@ -448,14 +449,7 @@ class TransformerEncoderAL(ALComponent):
 
         else:
 
-            if not self.reverse:
-                self._s = self.f(x, src_mask, src_key_padding_mask)
-                # self._t_prime = self.dy(self.bx(self._s))
-                return self._s.detach(), self._t_prime.detach()
-            else:
-                self._t = self.g(x)
-                self._s_prime = self.dx(self.by(self._t))
-                return self._t.detach(), self._s_prime.detach()
+            pass
 
     def loss(self):
 

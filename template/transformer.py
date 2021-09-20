@@ -26,15 +26,15 @@ CONFIG = {
         'embedding_dim': 300,
         'hidden_dim': 512,
         'nhead': 6,
-        'nlayers': 4,
-        'class_num': 4,
-        'max_len': 500,
+        'nlayers': 2,
+        'class_num': 2,
+        'max_len': 256,
         'one_hot_label': True,
         'activation': 'tanh',
-        'lr': 1e-4,
+        'lr': 1e-3,
         'batch_size': 256,
         'epochs': 40,
-        'ramdom_labe;': False
+        'ramdom_label': False
     },
     "Save_dir": 'ckpt/',
 }
@@ -99,8 +99,11 @@ class TransformerForCLS(nn.Module):
         device = output.device
         tgt_mask = self._generate_square_subsequent_mask(
             output.size(1)).to(device)
-        output = self.decoder(x, output, tgt_mask, tgt_key_padding_mask=src_key_padding_mask,
-                              memory_key_padding_mask=src_key_padding_mask)
+        output = self.decoder(
+            x, output, tgt_mask=tgt_mask, memory_mask=None,
+            tgt_key_padding_mask=src_key_padding_mask,
+            memory_key_padding_mask=src_key_padding_mask
+        )
         output = output.sum(dim=1)
 
         src_len = (src_key_padding_mask == 0).sum(dim=1)
@@ -166,7 +169,7 @@ def arg_parser():
         default=CONFIG['Parameters']['class_num']
     )
     parser.add_argument(
-        '--activation', type=int,
+        '--act', type=str,
         help='activation',
         default=CONFIG['Parameters']['activation']
     )
@@ -192,9 +195,10 @@ def arg_parser():
     )
 
     # dir param
+    dir = CONFIG["Save_dir"]
     parser.add_argument(
         '--save-dir', type=str,
-        default=f'ckpt/{t.lower()}_transformer.pt'
+        default=f'{dir}{t.lower()}_transformer.pt'
     )
 
     return parser.parse_args()
@@ -206,7 +210,7 @@ def dataloader(args):
     news_train = load_dataset(CONFIG['dataset'], split='train')
     news_test = load_dataset(CONFIG['dataset'], split='test')
 
-    # TODO: column names
+    # TODO: columns
     train_text = [b['text'] for b in news_train]
     train_label = multi_class_process(
         [b['label'] for b in news_train], args.class_num
