@@ -17,9 +17,23 @@ import pandas as pd
 import wandb
 
 from vis import tsne
+# from bpemb import BPEmb
 
 stop_words = set(stopwords.words('english'))
 
+def bpe():
+    emb = BPEmb(lang="en", vs=25000)
+    return emb
+
+def bpe_word2id(corpus, bpe):
+    corpus_id=[]
+    for sent in corpus:
+        s = bpe.encode_ids(sent)
+        s = [i+1 for i in s]
+        corpus_id.append(s)
+    return corpus_id
+
+stop_words = set(stopwords.words('english'))
 
 def count_parameters(model):
     table = PrettyTable(["Modules", "Parameters"])
