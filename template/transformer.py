@@ -100,7 +100,7 @@ class TransformerForCLS(nn.Module):
         tgt_mask = self._generate_square_subsequent_mask(
             output.size(1)).to(device)
         output = self.decoder(
-            x, output, tgt_mask=tgt_mask, memory_mask=None,
+            x, output, tgt_mask=None, memory_mask=None,
             tgt_key_padding_mask=src_key_padding_mask,
             memory_key_padding_mask=src_key_padding_mask
         )
@@ -274,20 +274,21 @@ def dataloader(args):
 def load_parameters():
 
     global CONFIG
-    with open("configs/hyperparameters.json", "r", encoding="utf8") as f:
+    t = CONFIG['Title']
+    with open(f'configs/{t}/hyperparameters.json', 'r', encoding='utf8') as f:
         CONFIG = json.load(f)
 
 
 def save_parameters():
 
-    with open("configs/hyperparameters.json", "w", encoding="utf8") as f:
+    with open('configs/hyperparameters.json', 'w', encoding='utf8') as f:
         json.dump(CONFIG, f, ensure_ascii=False, sort_keys=True, indent=3)
 
 
 def train(args):
 
     torch.cuda.empty_cache()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     train_loader, valid_loader, test_loader, vocab = dataloader(args)
 
@@ -309,6 +310,7 @@ def train(args):
         save_dir=args.save_dir, is_al=False
     )
     trainer.run(epochs=args.epoch)
+    trainer.eval()
 
 
 if __name__ == '__main__':
