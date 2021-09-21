@@ -80,7 +80,7 @@ class TransformerForCLS(nn.Module):
         )
         self.decoder = nn.TransformerDecoder(decoder_layer, nlayers)
         self.fc = nn.Linear(embedding_dim, class_num)
-        self.softmax = nn.Softmax(dim=1)
+        self.logsoftmax = nn.LogSoftmax(dim=1)
 
     def forward(self, x, src_mask=None, src_key_padding_mask=None):
 
@@ -112,7 +112,7 @@ class TransformerForCLS(nn.Module):
         output = output / src_len
         output = self.fc(output)
 
-        return self.softmax(output)
+        return self.logsoftmax(output)
 
     def _generate_square_subsequent_mask(self, sz: int):
         """
@@ -231,8 +231,9 @@ def dataloader(args):
 
     max_len = max([len(s) for s in clean_train_id])
     print('max seq length', max_len)
+    args.max_len = min(max_len, args.max_len)
 
-    train_features, train_mask = PadTransformer(clean_train_id, max_len)
+    train_features, train_mask = PadTransformer(clean_train_id, args.max_len)
     test_features, test_mask = PadTransformer(clean_test_id, max_len)
 
     X_train, X_valid, mask_train, mask_valid, y_train, y_valid = train_test_split(

@@ -21,19 +21,23 @@ from vis import tsne
 
 stop_words = set(stopwords.words('english'))
 
+
 def bpe():
     emb = BPEmb(lang="en", vs=25000)
     return emb
 
+
 def bpe_word2id(corpus, bpe):
-    corpus_id=[]
+    corpus_id = []
     for sent in corpus:
         s = bpe.encode_ids(sent)
         s = [i+1 for i in s]
         corpus_id.append(s)
     return corpus_id
 
+
 stop_words = set(stopwords.words('english'))
+
 
 def count_parameters(model):
     table = PrettyTable(["Modules", "Parameters"])
@@ -257,7 +261,7 @@ class TransfomerTrainer:
 
         self.opt = torch.optim.Adam(self.model.parameters(), lr=lr)
         # self.opt = torch.optim.SGD(self.model.parameters(), lr=0.1, momentum=0.9)
-        self.cri = nn.CrossEntropyLoss()
+        self.cri = nn.NLLLoss()
         self.clip = 5
 
         self.label_num = label_num
@@ -352,7 +356,7 @@ class TransfomerTrainer:
                         # for l in self.model.layers:
                         #     left = l.f(
                         #         left, src_key_padding_mask=masks)
-                        left = self.model.layer_2.f(
+                        mem = self.model.layer_2.f(
                             left, None, masks)
                         # left = self.model.layer_3.f(
                         #     left, None, masks)
@@ -362,12 +366,23 @@ class TransfomerTrainer:
                         #     left, None, masks)
                         # left = self.model.layer_6.f(
                         #     left, None, masks)
+
+                        # transformer decoder
+                        left = self.model.layer_2.bx[0](
+                            left, mem, tgt_mask=None, memory_mask=None,
+                            tgt_key_padding_mask=masks,
+                            memory_key_padding_mask=masks
+                        )
+
                         # mean pooling
                         left = left.sum(dim=1)
                         src_len = (masks == 0).sum(dim=1)
                         src_len = torch.stack((src_len,) * left.size(1), dim=1)
                         left = left / src_len
-                        right = self.model.layer_2.bx(left)
+
+                        # map shape
+                        left = self.model.layer_2.bx[1](left)
+                        right = self.model.layer_2.bx[2](left)
 
                         # NOTE: deprecated codes. for nn.Module list
                         # right = self.model.layers[-1].bx(left)
@@ -425,7 +440,7 @@ class TransfomerTrainer:
                         # for l in self.model.layers:
                         #     left = l.f(
                         #         left, src_key_padding_mask=masks)
-                        left = self.model.layer_2.f(
+                        mem = self.model.layer_2.f(
                             left, None, masks)
                         # left = self.model.layer_3.f(
                         #     left, None, masks)
@@ -435,12 +450,23 @@ class TransfomerTrainer:
                         #     left, None, masks)
                         # left = self.model.layer_6.f(
                         #     left, None, masks)
+
+                        # transformer decoder
+                        left = self.model.layer_2.bx[0](
+                            left, mem, tgt_mask=None, memory_mask=None,
+                            tgt_key_padding_mask=masks,
+                            memory_key_padding_mask=masks
+                        )
+
                         # mean pooling
                         left = left.sum(dim=1)
                         src_len = (masks == 0).sum(dim=1)
                         src_len = torch.stack((src_len,) * left.size(1), dim=1)
                         left = left / src_len
-                        right = self.model.layer_2.bx(left)
+
+                        # map shape
+                        left = self.model.layer_2.bx[1](left)
+                        right = self.model.layer_2.bx[2](left)
 
                         # NOTE: deprecated codes. for nn.Module list
                         # right = self.model.layers[-1].bx(left)
@@ -534,7 +560,7 @@ class TransfomerTrainer:
                     # for l in self.model.layers:
                     #     left = l.f(
                     #         left, src_key_padding_mask=masks)
-                    left = self.model.layer_2.f(
+                    mem = self.model.layer_2.f(
                         left, None, masks)
                     # left = self.model.layer_3.f(
                     #     left, None, masks)
@@ -544,12 +570,23 @@ class TransfomerTrainer:
                     #     left, None, masks)
                     # left = self.model.layer_6.f(
                     #     left, None, masks)
+
+                    # transformer decoder
+                    left = self.model.layer_2.bx[0](
+                        left, mem, tgt_mask=None, memory_mask=None,
+                        tgt_key_padding_mask=masks,
+                        memory_key_padding_mask=masks
+                    )
+
                     # mean pooling
                     left = left.sum(dim=1)
                     src_len = (masks == 0).sum(dim=1)
                     src_len = torch.stack((src_len,) * left.size(1), dim=1)
                     left = left / src_len
-                    right = self.model.layer_2.bx(left)
+
+                    # map shape
+                    left = self.model.layer_2.bx[1](left)
+                    right = self.model.layer_2.bx[2](left)
 
                     # NOTE: deprecated codes. for nn.Module list
                     # right = self.model.layers[-1].bx(left)

@@ -35,7 +35,7 @@ CONFIG = {
         'activation': 'tanh',
         'lr': 1e-3,
         'batch_size': 256,
-        'epochs': 40,
+        'epochs': 15,
         'ramdom_label': False
     },
     "Save_dir": 'data/ckpt/',
