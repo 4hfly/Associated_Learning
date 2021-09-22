@@ -30,15 +30,15 @@ CONFIG = {
         'nhead': 6,
         'nlayers': 2,
         'class_num': 14,
-        'max_len': 256,
+        'max_len': 128,
         'one_hot_label': True,
         'activation': 'tanh',
         'lr': 1e-3,
         'batch_size': 256,
-        'epochs': 40,
+        'epochs': 15,
         'ramdom_label': False
     },
-    "Save_dir": 'ckpt/',
+    "Save_dir": 'data/ckpt/',
 }
 
 
@@ -227,6 +227,7 @@ def dataloader(args):
     clean_test_id = convert2id(clean_test, vocab)
 
     max_len = max([len(s) for s in clean_train_id])
+    args.max_len = min(max_len, args.max_len)
     print('max seq length', max_len)
 
     train_features, train_mask = PadTransformer(clean_train_id, args.max_len)

@@ -227,10 +227,11 @@ def dataloader(args):
     clean_test_id = convert2id(clean_test, vocab)
 
     max_len = max([len(s) for s in clean_train_id])
+    args.max_len = min(max_len, args.max_len)
     print('max seq length', max_len)
 
-    train_features, train_mask = PadTransformer(clean_train_id, max_len)
-    test_features, test_mask = PadTransformer(clean_test_id, max_len)
+    train_features, train_mask = PadTransformer(clean_train_id, args.max_len)
+    test_features, test_mask = PadTransformer(clean_test_id, args.max_len)
 
     X_train, X_valid, mask_train, mask_valid, y_train, y_valid = train_test_split(
         train_features, train_mask, train_label, test_size=0.2, random_state=1)
@@ -326,6 +327,7 @@ def train(args):
         save_dir=args.save_dir, is_al=True
     )
     trainer.run(epochs=args.epoch)
+    trainer.eval()
 
 
 if __name__ == '__main__':

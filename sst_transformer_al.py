@@ -35,7 +35,7 @@ CONFIG = {
         'activation': 'tanh',
         'lr': 1e-3,
         'batch_size': 256,
-        'epochs': 40,
+        'epochs': 15,
         'ramdom_labe;': False
     },
     "Save_dir": 'data/ckpt/',
@@ -334,6 +334,7 @@ def train(args):
         save_dir=args.save_dir, is_al=True
     )
     trainer.run(epochs=args.epoch)
+    trainer.eval()
 
 
 if __name__ == '__main__':
