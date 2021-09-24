@@ -5,6 +5,7 @@ from collections import Counter
 from itertools import count
 
 import numpy as np
+from numpy.core.fromnumeric import argmax
 import torch
 import torch.nn as nn
 import wandb
@@ -116,15 +117,23 @@ def acc(pred, label):
 
 def data_preprocessing(text, remove_stopword=False):
 
+    tmp = text
+
     text = text.lower()
     # text = re.sub(r"[^A-Za-z0-9(),!?\'\`]", " ", text)
     text = re.sub('<.*?>', '', text)
     text = ''.join([c for c in text if c not in string.punctuation])
+
     if remove_stopword:
         text = [word for word in text.split() if word not in stop_words]
     else:
         text = [word for word in text.split()]
+
     text = ' '.join(text)
+
+    if text == '':
+        print(tmp)
+
     return text
 
 
@@ -356,7 +365,7 @@ class TransfomerTrainer:
                         # for l in self.model.layers:
                         #     left = l.f(
                         #         left, src_key_padding_mask=masks)
-                        mem = self.model.layer_2.f(
+                        left = self.model.layer_2.f(
                             left, None, masks)
                         # left = self.model.layer_3.f(
                         #     left, None, masks)
@@ -367,22 +376,13 @@ class TransfomerTrainer:
                         # left = self.model.layer_6.f(
                         #     left, None, masks)
 
-                        # transformer decoder
-                        left = self.model.layer_2.bx[0](
-                            left, mem, tgt_mask=None, memory_mask=None,
-                            tgt_key_padding_mask=masks,
-                            memory_key_padding_mask=masks
-                        )
-
                         # mean pooling
                         left = left.sum(dim=1)
                         src_len = (masks == 0).sum(dim=1)
                         src_len = torch.stack((src_len,) * left.size(1), dim=1)
                         left = left / src_len
 
-                        # map shape
-                        left = self.model.layer_2.bx[1](left)
-                        right = self.model.layer_2.bx[2](left)
+                        right = self.model.layer_2.bx(left)
 
                         # NOTE: deprecated codes. for nn.Module list
                         # right = self.model.layers[-1].bx(left)
@@ -440,7 +440,7 @@ class TransfomerTrainer:
                         # for l in self.model.layers:
                         #     left = l.f(
                         #         left, src_key_padding_mask=masks)
-                        mem = self.model.layer_2.f(
+                        left = self.model.layer_2.f(
                             left, None, masks)
                         # left = self.model.layer_3.f(
                         #     left, None, masks)
@@ -451,22 +451,13 @@ class TransfomerTrainer:
                         # left = self.model.layer_6.f(
                         #     left, None, masks)
 
-                        # transformer decoder
-                        left = self.model.layer_2.bx[0](
-                            left, mem, tgt_mask=None, memory_mask=None,
-                            tgt_key_padding_mask=masks,
-                            memory_key_padding_mask=masks
-                        )
-
                         # mean pooling
                         left = left.sum(dim=1)
                         src_len = (masks == 0).sum(dim=1)
                         src_len = torch.stack((src_len,) * left.size(1), dim=1)
                         left = left / src_len
 
-                        # map shape
-                        left = self.model.layer_2.bx[1](left)
-                        right = self.model.layer_2.bx[2](left)
+                        right = self.model.layer_2.bx(left)
 
                         # NOTE: deprecated codes. for nn.Module list
                         # right = self.model.layers[-1].bx(left)
@@ -480,10 +471,10 @@ class TransfomerTrainer:
                         right = self.model.layer_1.dy(right)
 
                         if self.label_num == 2:
-                            predicted_label = torch.round(
-                                self.model.embedding.dy(right).squeeze())
-                            val_acc += (predicted_label ==
-                                        labels.to(torch.float)).sum().item()
+                            predicted_label = self.model.embedding.dy(
+                                right).squeeze()
+                            val_acc += (predicted_label.argmax(1) ==
+                                        labels.to(torch.float).argmax(1)).sum().item()
                         else:
                             if self.double is False:
                                 predicted_label = self.model.embedding.dy(
@@ -560,7 +551,7 @@ class TransfomerTrainer:
                     # for l in self.model.layers:
                     #     left = l.f(
                     #         left, src_key_padding_mask=masks)
-                    mem = self.model.layer_2.f(
+                    left = self.model.layer_2.f(
                         left, None, masks)
                     # left = self.model.layer_3.f(
                     #     left, None, masks)
@@ -571,22 +562,13 @@ class TransfomerTrainer:
                     # left = self.model.layer_6.f(
                     #     left, None, masks)
 
-                    # transformer decoder
-                    left = self.model.layer_2.bx[0](
-                        left, mem, tgt_mask=None, memory_mask=None,
-                        tgt_key_padding_mask=masks,
-                        memory_key_padding_mask=masks
-                    )
-
                     # mean pooling
                     left = left.sum(dim=1)
                     src_len = (masks == 0).sum(dim=1)
                     src_len = torch.stack((src_len,) * left.size(1), dim=1)
                     left = left / src_len
 
-                    # map shape
-                    left = self.model.layer_2.bx[1](left)
-                    right = self.model.layer_2.bx[2](left)
+                    right = self.model.layer_2.bx(left)
 
                     # NOTE: deprecated codes. for nn.Module list
                     # right = self.model.layers[-1].bx(left)
@@ -600,10 +582,9 @@ class TransfomerTrainer:
                     right = self.model.layer_1.dy(right)
 
                     if self.label_num == 2:
-                        predicted_label = torch.round(
-                            model.embedding.dy(right).squeeze())
-                        test_acc += (predicted_label ==
-                                     labels.to(torch.float)).sum().item()
+                        predicted_label = model.embedding.dy(right).squeeze()
+                        test_acc += (predicted_label.argmax(-1) ==
+                                     labels.to(torch.float).argmax(-1)).sum().item()
                     else:
                         if self.double is False:
                             predicted_label = self.model.embedding.dy(right)
@@ -626,6 +607,73 @@ class TransfomerTrainer:
                 test_count += labels.size(0)
 
         print(f'Test acc:{test_acc/test_count*100}')
+
+    def pred(self):
+        '''for sst2'''
+
+        self.model.eval()
+        self.model.load_state_dict(torch.load(f'{self.save_dir}'))
+        model = self.model.to(self.device)
+
+        pred_file = {
+            'index': [],
+            'prediction': []
+        }
+
+        for idx, (inputs, masks) in enumerate(self.test_loader):
+
+            with torch.no_grad():
+
+                inputs = inputs.to(self.device)
+                masks = masks.to(self.device)
+
+                if self.is_al:
+
+                    left = self.model.embedding.f(inputs)
+                    left = self.model.layer_1.f(
+                        left, None, masks)
+                    # NOTE: deprecated codes. for nn.Module list
+                    # for l in self.model.layers:
+                    #     left = l.f(
+                    #         left, src_key_padding_mask=masks)
+                    left = self.model.layer_2.f(
+                        left, None, masks)
+                    # left = self.model.layer_3.f(
+                    #     left, None, masks)
+                    # left = self.model.layer_4.f(
+                    #     left, None, masks)
+                    # left = self.model.layer_5.f(
+                    #     left, None, masks)
+                    # left = self.model.layer_6.f(
+                    #     left, None, masks)
+
+                    # mean pooling
+                    left = left.sum(dim=1)
+                    src_len = (masks == 0).sum(dim=1)
+                    src_len = torch.stack((src_len,) * left.size(1), dim=1)
+                    left = left / src_len
+
+                    right = self.model.layer_2.bx(left)
+
+                    # NOTE: deprecated codes. for nn.Module list
+                    # right = self.model.layers[-1].bx(left)
+                    # for l in self.model.layers:
+                    #     right = l.dy(right)
+                    # right = self.model.layer_6.dy(right)
+                    # right = self.model.layer_5.dy(right)
+                    # right = self.model.layer_4.dy(right)
+                    # right = self.model.layer_3.dy(right)
+                    right = self.model.layer_2.dy(right)
+                    right = self.model.layer_1.dy(right)
+
+                    predicted_label = model.embedding.dy(
+                        right).argmax(1)
+
+                    pred_file['index'].append(idx)
+                    pred_file['prediction'].append(predicted_label.item())
+
+        output = pd.DataFrame(pred_file)
+        output.to_csv('data/sst2/SST-2.tsv', sep='\t', index=False)
 
     def short_cut_emb(self):
 

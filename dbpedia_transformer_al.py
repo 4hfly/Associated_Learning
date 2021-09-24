@@ -332,4 +332,4 @@ def train(args):
 if __name__ == '__main__':
     args = arg_parser()
     train(args)
-    save_parameters()
+    # save_parameters()

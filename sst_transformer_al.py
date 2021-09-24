@@ -19,8 +19,8 @@ from utils import *
 #   `pretrained`: str | None，不建議用 'none'
 #   `activation`: str
 CONFIG = {
-    'Title': 'Template',
-    'dataset': 'glue',
+    'Title': 'SST2',
+    'dataset': 'sst2',
     'Parameters': {
         'vocab_size': 30000,
         'pretrained': 'glove',
@@ -35,7 +35,7 @@ CONFIG = {
         'activation': 'tanh',
         'lr': 1e-3,
         'batch_size': 256,
-        'epochs': 15,
+        'epochs': 50,
         'ramdom_labe;': False
     },
     "Save_dir": 'data/ckpt/',
@@ -98,6 +98,10 @@ class TransformerForCLS(nn.Module):
         #     out_x.detach(), out_y.detach(), src_mask, src_key_padding_mask
         # )
         # layer_loss.append(self.layer_6.loss())
+
+        for l in layer_loss:
+            if torch.isnan(l).item():
+                print(x)
 
         return emb_loss, layer_loss
 
@@ -204,23 +208,19 @@ def arg_parser():
 def dataloader(args):
     '''還不夠格式化'''
 
-    news_train = load_dataset(CONFIG['dataset'], 'sst2', split='train')
-    news_valid = load_dataset(CONFIG['dataset'], 'sst2', split='validation')
-    news_test = load_dataset(CONFIG['dataset'], 'sst2', split='test')
+    dataset = CONFIG['dataset']
+    train_df = pd.read_csv(f'data/{dataset}/train.tsv', sep='\t')
+    valid_df = pd.read_csv(f'data/{dataset}/dev.tsv', sep='\t')
+    test_df = pd.read_csv(f'data/{dataset}/test.tsv', sep='\t')
 
     # TODO: columns
-    train_text = [b['sentence'] for b in news_train]
-    train_label = multi_class_process(
-        [b['label'] for b in news_train], args.class_num
-    )
-    valid_text = [b['sentence'] for b in news_valid]
-    valid_label = multi_class_process(
-        [b['label'] for b in news_valid], args.class_num
-    )
-    test_text = [b['sentence'] for b in news_test]
-    test_label = multi_class_process(
-        [b['label'] for b in news_test], args.class_num
-    )
+    train_text = train_df['sentence'].tolist()
+    train_label = multi_class_process(train_df['label'].tolist(), 2)
+
+    valid_text = valid_df['sentence'].tolist()
+    valid_label = multi_class_process(valid_df['label'].tolist(), 2)
+
+    test_text = test_df['sentence'].tolist()
 
     clean_train = [data_preprocessing(t) for t in train_text]
     clean_valid = [data_preprocessing(t) for t in valid_text]
@@ -233,6 +233,15 @@ def dataloader(args):
     clean_valid_id = convert2id(clean_valid, vocab)
     clean_test_id = convert2id(clean_test, vocab)
 
+    cti = []
+    tl = []
+    for i in range(len(clean_train_id)):
+        if len(clean_train_id[i]) >= 1:
+            cti.append(clean_train_id[i])
+            tl.append(train_label[i])
+    clean_train_id = cti
+    train_label = tl
+
     max_len = max([len(s) for s in clean_train_id])
     print('max seq length', max_len)
 
@@ -242,7 +251,7 @@ def dataloader(args):
 
     X_train, mask_train, y_train = train_features, train_mask, train_label
     X_valid, mask_valid, y_valid = valid_features, valid_mask, valid_label
-    X_test, mask_test, y_test = test_features, test_mask, test_label
+    X_test, mask_test = test_features, test_mask
 
     print('dataset information:')
     print('=====================')
@@ -259,7 +268,6 @@ def dataloader(args):
     test_data = TensorDataset(
         torch.from_numpy(X_test),
         torch.from_numpy(mask_test),
-        torch.stack(y_test)
     )
     valid_data = TensorDataset(
         torch.from_numpy(X_valid),
@@ -270,7 +278,7 @@ def dataloader(args):
     batch_size = args.batch_size
 
     train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
-    test_loader = DataLoader(test_data, shuffle=False, batch_size=batch_size)
+    test_loader = DataLoader(test_data, shuffle=False, batch_size=1)
     valid_loader = DataLoader(valid_data, shuffle=False, batch_size=batch_size)
 
     return train_loader, valid_loader, test_loader, vocab
@@ -334,10 +342,10 @@ def train(args):
         save_dir=args.save_dir, is_al=True
     )
     trainer.run(epochs=args.epoch)
-    trainer.eval()
+    trainer.pred()
 
 
 if __name__ == '__main__':
     args = arg_parser()
     train(args)
-    save_parameters()
+    # save_parameters()

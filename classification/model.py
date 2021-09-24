@@ -406,15 +406,10 @@ class TransformerEncoderAL(ALComponent):
             nn.Linear(d_model[1], y_hidden, bias=False),
             act
         )
-        # NOTE: transformer decoder bridge
-        decoder_layer = nn.TransformerDecoderLayer(
-            d_model[0], nhead, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation, layer_norm_eps=layer_norm_eps, batch_first=batch_first
-        )
-        bx = nn.ModuleList([
-            nn.TransformerDecoder(decoder_layer, 1),
+        bx = nn.Sequential(
             nn.Linear(d_model[0], y_hidden, bias=False),
             act
-        ])
+        )
         by = None
         dx = None
         dy = nn.Sequential(
@@ -437,17 +432,13 @@ class TransformerEncoderAL(ALComponent):
 
         if self.training:
 
-            # NOTE: 自己寫的版本就少一個src_mask參數。
-            self._s = self.f(x, src_mask, src_key_padding_mask)
-            # NOTE: bridge decoder needs a n*n mask. x.size(1) == src_len.
             device = x.device
             tgt_mask = self._generate_square_subsequent_mask(
                 x.size(1)).to(device)
-            self._s_prime = self.bx[0](x, self._s, tgt_mask=None, memory_mask=None,
-                                       tgt_key_padding_mask=src_key_padding_mask,
-                                       memory_key_padding_mask=src_key_padding_mask)
-            self._s_prime = self.bx[1](self._s_prime)
-            self._s_prime = self.bx[2](self._s_prime)
+            # NOTE: 自己寫的版本就少一個src_mask參數。
+            self._s = self.f(x, src_mask, src_key_padding_mask)
+            # NOTE: bridge decoder needs a n*n mask. x.size(1) == src_len.
+            self._s_prime = self.bx(self._s)
             # self._s_prime = self.dx(self._s)
             self._t = self.g(y)
             self._t_prime = self.dy(self._t)
@@ -471,6 +462,9 @@ class TransformerEncoderAL(ALComponent):
             loss_d = self.criterion_ae(self._t_prime, self.y)
         else:
             raise Exception()
+
+        if torch.isnan(loss_b).item():
+            print(p[p == float('nan')].sum())
 
         return loss_b + loss_d
 

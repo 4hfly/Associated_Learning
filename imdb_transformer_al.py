@@ -30,7 +30,7 @@ CONFIG = {
         'nhead': 6,
         'nlayers': 2,
         'class_num': 2,
-        'max_len': 256,
+        'max_len': 128,
         'one_hot_label': True,
         'activation': 'tanh',
         'lr': 1e-3,
@@ -38,7 +38,7 @@ CONFIG = {
         'epochs': 15,
         'ramdom_labe;': False
     },
-    "Save_dir": 'ckpt/',
+    "Save_dir": 'data/ckpt/',
 }
 
 
@@ -331,4 +331,4 @@ def train(args):
 if __name__ == '__main__':
     args = arg_parser()
     train(args)
-    save_parameters()
+    # save_parameters()
