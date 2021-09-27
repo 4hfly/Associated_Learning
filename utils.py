@@ -18,6 +18,7 @@ import pandas as pd
 import wandb
 
 from vis import tsne
+# TODO: bpemb.py
 # from bpemb import BPEmb
 
 stop_words = set(stopwords.words('english'))
@@ -35,9 +36,6 @@ def bpe_word2id(corpus, bpe):
         s = [i+1 for i in s]
         corpus_id.append(s)
     return corpus_id
-
-
-stop_words = set(stopwords.words('english'))
 
 
 def count_parameters(model):
@@ -186,7 +184,6 @@ def multi_doubleclass_process(labels, label_num):
 
 def multi_label_process(labels, label_num):
     '''
-    multi-label用的
     this function will convert multi-label lists into one-hot vector or n-hot vector
     '''
     hot_vecs = []
@@ -257,16 +254,11 @@ class TransfomerTrainer:
         self, model, lr, train_loader, valid_loader, test_loader, save_dir, label_num=None, double=False, class_num=None, is_al=False
     ):
 
-        # Still need a arg parser to pass arguments
-        # TODO: 我覺得這種外部控制的參數，用全域 CONFIG 之類的定義就好，
-        # 傳參反而有點麻煩，而且 trace 會比較困難。
-
         self.model = model
-        # TODO: wandb env.
-        # project_name = save_dir.replace('/', '-')
-        # wandb.init(project=project_name, entity='hibb')
-        # config = wandb.config
-        # wandb.watch(self.model)
+        project_name = save_dir.replace('/', '-')
+        wandb.login(key='dac9f03409de9a9bf174acc9ed65b08fadb2272b')
+        wandb.init(project=project_name, entity='al-train')
+        wandb.watch(self.model)
 
         self.opt = torch.optim.Adam(self.model.parameters(), lr=lr)
         # self.opt = torch.optim.SGD(self.model.parameters(), lr=0.1, momentum=0.9)
@@ -304,7 +296,14 @@ class TransfomerTrainer:
 
             total_loss = []
             total_emb_loss = []
-
+            losses = {
+                "emb bridge": [],
+                "emb associated": [],
+                "layer1 bridge": [],
+                "layer1 associated": [],
+                "layer2 bridge": [],
+                "layer2 associated": []
+            }
             total_acc = 0.0
             total_count = 0
 
@@ -327,15 +326,16 @@ class TransfomerTrainer:
                     loss = emb_loss
                     for l in layers_loss:
                         loss += l
-                    # wandb.log({"emb loss": emb_loss.item()})
-                    # wandb.log({"lstm1 loss": l1_loss.item()})
-                    # wandb.log({"lstm2 loss": l2_loss.item()})
-                    # wandb.log({"emb bridge loss": self.model.embedding.loss_b})
-                    # wandb.log({"emb decode loss": self.model.embedding.loss_d})
-                    # wandb.log({"lstm1 bridge loss": self.model.layer_1.loss_b})
-                    # wandb.log({"lstm1 decode loss": self.model.layer_1.loss_d})
-                    # wandb.log({"lstm2 bridge loss": self.model.layer_2.loss_b})
-                    # wandb.log({"lstm2 decode loss": self.model.layer_2.loss_d})
+
+                    losses["emb bridge"].append(self.model.embedding.loss_b)
+                    losses["emb associated"].append(
+                        self.model.embedding.loss_d)
+                    losses["layer1 bridge"].append(self.model.layer_1.loss_b)
+                    losses["layer1 associated"].append(
+                        self.model.layer_1.loss_d)
+                    losses["layer2 bridge"].append(self.model.layer_2.loss_b)
+                    losses["layer2 associated"].append(
+                        self.model.layer_2.loss_d)
 
                 else:
 
@@ -344,7 +344,6 @@ class TransfomerTrainer:
                     loss = self.cri(
                         outputs, torch.argmax(labels.long(), dim=1))
 
-                # wandb.log({"total loss": loss.item()})
                 loss.backward()
                 total_loss.append(loss.item())
 
@@ -473,8 +472,7 @@ class TransfomerTrainer:
                         if self.label_num == 2:
                             predicted_label = self.model.embedding.dy(
                                 right).squeeze()
-                            val_acc += (predicted_label.argmax(1) ==
-                                        labels.to(torch.float).argmax(1)).sum().item()
+
                         else:
                             if self.double is False:
                                 predicted_label = self.model.embedding.dy(
@@ -500,6 +498,11 @@ class TransfomerTrainer:
                 total_loss), ]
             epoch_train_acc = total_acc/total_count
             epoch_val_acc = val_acc/val_count
+
+            for k in list(losses.keys()):
+                losses[k] = np.mean(losses[k])
+
+            wandb.log(losses)
 
             print(f'Epoch {e+1}')
             if self.is_al:
@@ -583,8 +586,6 @@ class TransfomerTrainer:
 
                     if self.label_num == 2:
                         predicted_label = model.embedding.dy(right).squeeze()
-                        test_acc += (predicted_label.argmax(-1) ==
-                                     labels.to(torch.float).argmax(-1)).sum().item()
                     else:
                         if self.double is False:
                             predicted_label = self.model.embedding.dy(right)
@@ -667,10 +668,17 @@ class TransfomerTrainer:
                     right = self.model.layer_1.dy(right)
 
                     predicted_label = model.embedding.dy(
-                        right).argmax(1)
+                        right)
 
-                    pred_file['index'].append(idx)
-                    pred_file['prediction'].append(predicted_label.item())
+                else:
+
+                    predicted_label = self.model(
+                        inputs, src_key_padding_mask=masks
+                    )
+
+                pred_file['index'].append(idx)
+                pred_file['prediction'].append(
+                    predicted_label.argmax(1).item())
 
         output = pd.DataFrame(pred_file)
         output.to_csv('data/sst2/SST-2.tsv', sep='\t', index=False)
@@ -678,33 +686,25 @@ class TransfomerTrainer:
     def short_cut_emb(self):
 
         self.model.eval()
-        # self.model.load_state_dict(torch.load(f'{self.save_dir}'))
+        self.model.load_state_dict(torch.load(f'{self.save_dir}'))
         model = self.model.to(self.device)
 
         test_acc = 0
         test_count = 0
 
-        for inputs, labels in self.test_loader:
+        for inputs, masks, labels in self.test_loader:
 
             with torch.no_grad():
 
-                model.embedding.eval()
-                model.layer_1.eval()
-                model.layer_2.eval()
-
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
+                inputs = inputs.to(self.device)
+                masks = masks.to(self.device)
+                labels = labels.to(self.device)
 
                 right = model.short_cut_emb(inputs)
 
-                if self.label_num == 2:
-                    predicted_label = torch.round(
-                        model.embedding.dy(right).squeeze())
-                    test_acc += (predicted_label ==
-                                 labels.to(torch.float)).sum().item()
-                else:
-                    predicted_label = right.squeeze()
-                    test_acc += (predicted_label.argmax(-1) ==
-                                 labels.to(torch.float).argmax(-1)).sum().item()
+                predicted_label = right.squeeze()
+                test_acc += (predicted_label.argmax(-1) ==
+                             labels.to(torch.float).argmax(-1)).sum().item()
 
                 test_count += labels.size(0)
 
@@ -713,70 +713,28 @@ class TransfomerTrainer:
     def short_cut_l1(self):
 
         self.model.eval()
-        # self.model.load_state_dict(torch.load(f'{self.save_dir}'))
-        model = self.model.to(self.device)
+        self.model.load_state_dict(torch.load(f'{self.save_dir}'))
 
         test_acc = 0
         test_count = 0
 
-        for inputs, labels in self.test_loader:
+        for inputs, masks, labels in self.test_loader:
 
             with torch.no_grad():
 
-                model.embedding.eval()
-                model.layer_1.eval()
-                model.layer_2.eval()
+                inputs = inputs.to(self.device)
+                masks = masks.to(self.device)
+                labels = labels.to(self.device)
 
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
+                right = self.model.short_cut_l1(inputs, masks)
 
-                right = model.short_cut_lstm(inputs)
-
-                if self.label_num == 2:
-                    predicted_label = torch.round(
-                        model.embedding.dy(right).squeeze())
-                    test_acc += (predicted_label ==
-                                 labels.to(torch.float)).sum().item()
-                else:
-                    predicted_label = right.squeeze()
-                    test_acc += (predicted_label.argmax(-1) ==
-                                 labels.to(torch.float).argmax(-1)).sum().item()
+                predicted_label = right.squeeze()
+                test_acc += (predicted_label.argmax(-1) ==
+                             labels.to(torch.float).argmax(-1)).sum().item()
 
                 test_count += labels.size(0)
 
-        print('Short cut lstm Test acc', test_acc/test_count)
-
-    def tsne(self):
-
-        # TODO: 1. dataloader 還有 masks. 2. 拿掉 hidden vector & 改成 mean pooling.
-        self.model.eval()
-        self.model.load_state_dict(torch.load(f'{self.save_dir}'))
-        model = self.model.to(self.device)
-        all_feats = []
-        all_labels = []
-        class_num = 0
-        for inputs, labels in self.test_loader:
-
-            with torch.no_grad():
-
-                model.embedding.eval()
-                model.layer_1.eval()
-                model.layer_2.eval()
-
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
-
-                left = model.embedding.f(inputs)
-                output, hidden = model.layer_1.f(left)
-                left, (output, c) = model.layer_2.f(output, hidden)
-                left = left[:, -1, :]
-                class_num = labels.size(-1)
-                # left = left.reshape(left.size(1), -1)
-                right = model.layer_2.bx(left)
-                for i in range(right.size(0)):
-                    all_feats.append(right[i, :].numpy())
-                    all_labels.append(labels[i, :].argmax(-1).item())
-        tsne_plot_dir = self.save_dir[:-2]+'al.tsne.png'
-        tsne(all_feats, all_labels, class_num, tsne_plot_dir)
-        print('tsne saved in ', tsne_plot_dir)
+        print('Short cut layer1 Test acc', test_acc/test_count)
 
 
 class ALTrainer:

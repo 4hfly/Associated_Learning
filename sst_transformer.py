@@ -1,6 +1,7 @@
-# -*- coding: utf-8 -*-
 import argparse
 import json
+import math
+import os
 
 import torch
 import torch.nn as nn
@@ -11,21 +12,21 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from transformer.encoder import TransformerEncoder
 from transformer.encoder.utils import PositionalEncoding
-from classification.model import EmbeddingAL, TransformerEncoderAL
 from utils import *
+
+os.environ["WANDB_SILENT"] = "true"
 
 # TODO: 可以寫成一個 class 取代 parser。
 # Parameters:
 #   `pretrained`: str | None，不建議用 'none'
 #   `activation`: str
 CONFIG = {
-    'Title': 'Template',
-    'dataset': 'template',
+    'Title': 'SST2',
+    'dataset': 'sst2',
     'Parameters': {
         'vocab_size': 30000,
         'pretrained': 'glove',
         'embedding_dim': 300,
-        'label_dim': 128,
         'hidden_dim': 256,
         'nhead': 6,
         'nlayers': 2,
@@ -35,71 +36,86 @@ CONFIG = {
         'activation': 'tanh',
         'lr': 1e-3,
         'batch_size': 256,
-        'epochs': 40,
+        'epochs': 5,
         'ramdom_labe;': False
     },
-    "Save_dir": 'ckpt/',
+    "Save_dir": 'data/ckpt/',
 }
 
 
 class TransformerForCLS(nn.Module):
 
-    def __init__(self, emb, l1, l2, l3, l4, l5, l6):
+    def __init__(
+        self,
+        vocab_size,
+        embedding_dim,
+        hidden_dim,
+        nhead,
+        nlayers,
+        class_num,
+        dropout: float = 0.5,
+        pretrain: Tensor = None
+    ):
 
         super(TransformerForCLS, self).__init__()
-        self.embedding = emb
-        self.layer_1 = l1
-        self.layer_2 = l2
-        # self.layer_3 = l3
-        # self.layer_4 = l4
-        # self.layer_5 = l5
-        # self.layer_6 = l6
-        # NOTE: still has some bugs.
-        # self.layers = nn.ModuleList([copy.deepcopy(module) for _ in range(n - 1)])
 
-        self.dropout = nn.Dropout(0.1)
+        self.emb_dim = embedding_dim
 
-    def forward(self, x, y, src_mask=None, src_key_padding_mask=None):
+        if pretrain == None:
+            self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        else:
+            self.embedding = nn.Embedding.from_pretrained(
+                pretrain, freeze=False, padding_idx=0
+            )
 
-        layer_loss = []
-        # if mask == None:
-        #     device = x.device
-        #     mask = self._generate_square_subsequent_mask(x).to(device)
-        emb_x, emb_y = self.embedding(x, y)
-        emb_x, emb_y = self.dropout(emb_x), self.dropout(emb_y)
-        emb_loss = self.embedding.loss()
-
-        out_x, out_y = self.layer_1(
-            emb_x.detach(), emb_y.detach(), src_mask, src_key_padding_mask
+        self.pos_encoder = PositionalEncoding(embedding_dim, dropout)
+        encoder_layer = nn.TransformerEncoderLayer(
+            embedding_dim, nhead, hidden_dim, dropout=dropout, batch_first=True
         )
-        layer_loss.append(self.layer_1.loss())
-
-        out_x, out_y = self.layer_2(
-            out_x.detach(), out_y.detach(), src_mask, src_key_padding_mask
-        )
-        layer_loss.append(self.layer_2.loss())
-
-        # out_x, out_y = self.layer_3(
-        #     out_x.detach(), out_y.detach(), src_mask, src_key_padding_mask
+        self.encoder = nn.TransformerEncoder(encoder_layer, nlayers)
+        # NOTE: (default) batch first = True
+        # self.encoder = TransformerEncoder(
+        #     embedding_dim, hidden_dim, nhead, nlayers, dropout
         # )
-        # layer_loss.append(self.layer_3.loss())
-
-        # out_x, out_y = self.layer_4(
-        #     out_x.detach(), out_y.detach(), src_mask, src_key_padding_mask
+        # NOTE: transformer decoder
+        # decoder_layer = nn.TransformerDecoderLayer(
+        #     embedding_dim, nhead, hidden_dim, dropout=dropout, batch_first=True
         # )
-        # layer_loss.append(self.layer_4.loss())
+        # self.decoder = nn.TransformerDecoder(decoder_layer, nlayers)
+        self.fc = nn.Linear(embedding_dim, class_num)
+        self.logsoftmax = nn.LogSoftmax(dim=1)
 
-        # out_x, out_y = self.layer_5(
-        #     out_x.detach(), out_y.detach(), src_mask, src_key_padding_mask
+    def forward(self, x, src_mask=None, src_key_padding_mask=None):
+
+        x = self.embedding(x)
+        # NOTE: positional encoding.
+        # 乘上 math.sqrt(self.emb_dim) 是模仿別人的，可以改。
+        x = x * math.sqrt(self.emb_dim)
+        x = self.pos_encoder(x)
+
+        # NOTE: 假如是 transformer package 的，forward 參數只會有兩個，因此寫法是
+        # output = self.encoder(x, src_key_padding_mask).sum(dim=1)
+        # nn.Transformer 有三個參數，而 encoder 不需要 n*n 的 mask。
+        output = self.encoder(x, src_mask, src_key_padding_mask)
+
+        # NOTE: 9.18
+        # device = output.device
+        # tgt_mask = self._generate_square_subsequent_mask(
+        #     output.size(1)).to(device)
+        # output = self.decoder(
+        #     x, output, tgt_mask=None, memory_mask=None,
+        #     tgt_key_padding_mask=src_key_padding_mask,
+        #     memory_key_padding_mask=src_key_padding_mask
         # )
-        # layer_loss.append(self.layer_5.loss())
+        output = output.sum(dim=1)
 
-        # out_x, out_y = self.layer_6(
-        #     out_x.detach(), out_y.detach(), src_mask, src_key_padding_mask
-        # )
-        # layer_loss.append(self.layer_6.loss())
+        src_len = (src_key_padding_mask == 0).sum(dim=1)
+        # fit the shape of output
+        src_len = torch.stack((src_len,) * output.size(1), dim=1)
+        output = output / src_len
+        output = self.fc(output)
 
-        return emb_loss, layer_loss
+        return self.logsoftmax(output)
 
     def _generate_square_subsequent_mask(self, sz: int):
         """
@@ -136,11 +152,6 @@ def arg_parser():
         default=CONFIG['Parameters']['embedding_dim']
     )
     parser.add_argument(
-        '--label-dim', type=int,
-        help='y(label) dimension',
-        default=CONFIG['Parameters']['label_dim']
-    )
-    parser.add_argument(
         '--hid-dim', type=int,
         help='hidden dimension',
         default=CONFIG['Parameters']['hidden_dim']
@@ -159,11 +170,6 @@ def arg_parser():
         '--class-num', type=int,
         help='class dimension',
         default=CONFIG['Parameters']['class_num']
-    )
-    parser.add_argument(
-        '--max-len', type=int,
-        help='sequence max len',
-        default=CONFIG['Parameters']['max_len']
     )
     parser.add_argument(
         '--act', type=str,
@@ -195,7 +201,7 @@ def arg_parser():
     dir = CONFIG["Save_dir"]
     parser.add_argument(
         '--save-dir', type=str,
-        default=f'{dir}{t.lower()}_transformer_al.pt'
+        default=f'{dir}{t.lower()}_transformer.pt'
     )
 
     return parser.parse_args()
@@ -204,38 +210,50 @@ def arg_parser():
 def dataloader(args):
     '''還不夠格式化'''
 
-    news_train = load_dataset(CONFIG['dataset'], split='train')
-    news_test = load_dataset(CONFIG['dataset'], split='test')
+    dataset = CONFIG['dataset']
+    train_df = pd.read_csv(f'data/{dataset}/train.tsv', sep='\t')
+    valid_df = pd.read_csv(f'data/{dataset}/dev.tsv', sep='\t')
+    test_df = pd.read_csv(f'data/{dataset}/test.tsv', sep='\t')
 
     # TODO: columns
-    train_text = [b['text'] for b in news_train]
-    train_label = multi_class_process(
-        [b['label'] for b in news_train], args.class_num
-    )
-    test_text = [b['text'] for b in news_test]
-    test_label = multi_class_process(
-        [b['label'] for b in news_test], args.class_num
-    )
+    train_text = train_df['sentence'].tolist()
+    train_label = multi_class_process(train_df['label'].tolist(), 2)
 
-    clean_train = [data_preprocessing(t, True) for t in train_text]
-    clean_test = [data_preprocessing(t, True) for t in test_text]
+    valid_text = valid_df['sentence'].tolist()
+    valid_label = multi_class_process(valid_df['label'].tolist(), 2)
+
+    test_text = test_df['sentence'].tolist()
+
+    clean_train = [data_preprocessing(t) for t in train_text]
+    clean_valid = [data_preprocessing(t) for t in valid_text]
+    clean_test = [data_preprocessing(t) for t in test_text]
 
     # NOTE: 這是要回傳的值
     vocab = create_vocab(clean_train)
 
     clean_train_id = convert2id(clean_train, vocab)
+    clean_valid_id = convert2id(clean_valid, vocab)
     clean_test_id = convert2id(clean_test, vocab)
 
+    cti = []
+    tl = []
+    for i in range(len(clean_train_id)):
+        if len(clean_train_id[i]) >= 1:
+            cti.append(clean_train_id[i])
+            tl.append(train_label[i])
+    clean_train_id = cti
+    train_label = tl
+
     max_len = max([len(s) for s in clean_train_id])
-    args.max_len = min(max_len, args.max_len)
     print('max seq length', max_len)
 
-    train_features, train_mask = PadTransformer(clean_train_id, args.max_len)
-    test_features, test_mask = PadTransformer(clean_test_id, args.max_len)
+    train_features, train_mask = PadTransformer(clean_train_id, max_len)
+    valid_features, valid_mask = PadTransformer(clean_valid_id, max_len)
+    test_features, test_mask = PadTransformer(clean_test_id, max_len)
 
-    X_train, X_valid, mask_train, mask_valid, y_train, y_valid = train_test_split(
-        train_features, train_mask, train_label, test_size=0.2, random_state=1)
-    X_test, mask_test, y_test = test_features, test_mask, test_label
+    X_train, mask_train, y_train = train_features, train_mask, train_label
+    X_valid, mask_valid, y_valid = valid_features, valid_mask, valid_label
+    X_test, mask_test = test_features, test_mask
 
     print('dataset information:')
     print('=====================')
@@ -252,7 +270,6 @@ def dataloader(args):
     test_data = TensorDataset(
         torch.from_numpy(X_test),
         torch.from_numpy(mask_test),
-        torch.stack(y_test)
     )
     valid_data = TensorDataset(
         torch.from_numpy(X_valid),
@@ -263,7 +280,7 @@ def dataloader(args):
     batch_size = args.batch_size
 
     train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
-    test_loader = DataLoader(test_data, shuffle=False, batch_size=batch_size)
+    test_loader = DataLoader(test_data, shuffle=False, batch_size=1)
     valid_loader = DataLoader(valid_data, shuffle=False, batch_size=batch_size)
 
     return train_loader, valid_loader, test_loader, vocab
@@ -272,20 +289,21 @@ def dataloader(args):
 def load_parameters():
 
     global CONFIG
-    with open("configs/hyperparameters.json", "r", encoding="utf8") as f:
+    t = CONFIG['Title']
+    with open(f'configs/{t}/hyperparameters.json', 'r', encoding='utf8') as f:
         CONFIG = json.load(f)
 
 
 def save_parameters():
 
-    with open("configs/hyperparameters.json", "w", encoding="utf8") as f:
+    with open('configs/hyperparameters.json', 'w', encoding='utf8') as f:
         json.dump(CONFIG, f, ensure_ascii=False, sort_keys=True, indent=3)
 
 
 def train(args):
 
     torch.cuda.empty_cache()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     train_loader, valid_loader, test_loader, vocab = dataloader(args)
 
@@ -294,43 +312,20 @@ def train(args):
     else:
         w = None
 
-    act = get_act(args)
-    emb = EmbeddingAL(
-        (args.vocab_size, args.class_num),
-        (args.emb_dim, args.label_dim),
-        lin=args.one_hot_label,
-        pretrained=w,
-        act=act
+    model = TransformerForCLS(
+        args.vocab_size, args.emb_dim, args.hid_dim,
+        args.nhead, args.nlayers, args.class_num, pretrain=w
     )
-
-    nhead = 6
-    l1 = TransformerEncoderAL((args.emb_dim, args.label_dim), nhead,
-                              args.hid_dim, args.hid_dim, dropout=0.1, batch_first=True, act=act)
-    l2 = TransformerEncoderAL((args.emb_dim, args.hid_dim), nhead,
-                              args.hid_dim, args.hid_dim, dropout=0.1, batch_first=True, act=act)
-    l3 = TransformerEncoderAL((args.emb_dim, args.hid_dim), nhead,
-                              args.hid_dim, args.hid_dim, dropout=0.1, batch_first=True, act=act)
-    l4 = TransformerEncoderAL((args.emb_dim, args.hid_dim), nhead,
-                              args.hid_dim, args.hid_dim, dropout=0.1, batch_first=True, act=act)
-    l5 = TransformerEncoderAL((args.emb_dim, args.hid_dim), nhead,
-                              args.hid_dim, args.hid_dim, dropout=0.1, batch_first=True, act=act)
-    l6 = TransformerEncoderAL((args.emb_dim, args.hid_dim), nhead,
-                              args.hid_dim, args.hid_dim, dropout=0.1, batch_first=True, act=act)
-
-    model = TransformerForCLS(emb, l1, l2, l3, l4, l5, l6)
     model = model.to(device)
     print(count_parameters(model))
 
     trainer = TransfomerTrainer(
         model, args.lr, train_loader=train_loader,
         valid_loader=valid_loader, test_loader=test_loader,
-        save_dir=args.save_dir, is_al=True
+        save_dir=args.save_dir, is_al=False
     )
     trainer.run(epochs=args.epoch)
-    trainer.eval()
-    # trainer.pred()
-    trainer.short_cut_emb()
-    trainer.short_cut_l1()
+    trainer.pred()
 
 
 if __name__ == '__main__':

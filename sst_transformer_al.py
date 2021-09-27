@@ -35,7 +35,7 @@ CONFIG = {
         'activation': 'tanh',
         'lr': 1e-3,
         'batch_size': 256,
-        'epochs': 50,
+        'epochs': 15,
         'ramdom_labe;': False
     },
     "Save_dir": 'data/ckpt/',
@@ -104,6 +104,28 @@ class TransformerForCLS(nn.Module):
                 print(x)
 
         return emb_loss, layer_loss
+
+    def short_cut_emb(self, x):
+
+        x, _ = self.embedding.f(x)
+        p_nonzero = (x != 0.).sum(dim=1)
+        left = x.sum(dim=1) / p_nonzero
+        right = self.embedding.bx(left)
+        right = self.embedding.dy(right)
+        return right
+
+    def short_cut_l1(self, x, masks):
+
+        left, _ = self.embedding.f(x)
+        left = self.layer_1.f(
+            left, None, masks)
+        left = left.sum(dim=1)
+        src_len = (masks == 0).sum(dim=1)
+        src_len = torch.stack((src_len,) * left.size(1), dim=1)
+        left = left / src_len
+        right = self.layer_1.bx(left)
+        right = self.embedding.dy(right)
+        return right
 
     def _generate_square_subsequent_mask(self, sz: int):
         """
@@ -343,6 +365,8 @@ def train(args):
     )
     trainer.run(epochs=args.epoch)
     trainer.pred()
+    trainer.short_cut_emb()
+    trainer.short_cut_l1()
 
 
 if __name__ == '__main__':

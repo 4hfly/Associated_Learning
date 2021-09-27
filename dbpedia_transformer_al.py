@@ -327,6 +327,8 @@ def train(args):
         save_dir=args.save_dir, is_al=True
     )
     trainer.run(epochs=args.epoch)
+    trainer.short_cut_emb()
+    trainer.short_cut_l1()
 
 
 if __name__ == '__main__':
