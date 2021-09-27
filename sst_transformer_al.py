@@ -107,7 +107,7 @@ class TransformerForCLS(nn.Module):
 
     def short_cut_emb(self, x):
 
-        x, _ = self.embedding.f(x)
+        x = self.embedding.f(x)
         p_nonzero = (x != 0.).sum(dim=1)
         left = x.sum(dim=1) / p_nonzero
         right = self.embedding.bx(left)
@@ -116,7 +116,7 @@ class TransformerForCLS(nn.Module):
 
     def short_cut_l1(self, x, masks):
 
-        left, _ = self.embedding.f(x)
+        left = self.embedding.f(x)
         left = self.layer_1.f(
             left, None, masks)
         left = left.sum(dim=1)
