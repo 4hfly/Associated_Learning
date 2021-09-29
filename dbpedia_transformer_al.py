@@ -35,7 +35,7 @@ CONFIG = {
         'activation': 'tanh',
         'lr': 1e-3,
         'batch_size': 256,
-        'epochs': 15,
+        'epochs': 5,
         'ramdom_label': False
     },
     "Save_dir": 'data/ckpt/',
@@ -120,6 +120,7 @@ class TransformerForCLS(nn.Module):
         src_len = torch.stack((src_len,) * left.size(1), dim=1)
         left = left / src_len
         right = self.layer_1.bx(left)
+        right = self.layer_1.dy(right)
         right = self.embedding.dy(right)
         return right
 
