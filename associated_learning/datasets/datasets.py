@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import os
@@ -6,8 +5,6 @@ import os
 import pandas as pd
 from datasets import load_dataset
 from torch.utils.data import Dataset
-from torchvision import datasets
-from torchvision.io import read_image
 
 
 class WikiFR(object):

@@ -526,14 +526,9 @@ dmypy.json
 cython_debug/
 
 # our data
-data/wikitext-103-raw/
-data/wmt14/
+.data/
+.vector_cache/
+.word_vectors_cache/
+data/
+wandb/
 *.tfrecords
-lm/__pycache__/
-lm/data/pretrain
-lm/data/train
-lm/data/test
-lm/data/valid
-lm/data/fr
-lm/model_ckp
-nmt/data/
