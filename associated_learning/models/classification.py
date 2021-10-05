@@ -1,16 +1,101 @@
 # -*- coding: utf-8 -*-
 import torch
 import torch.nn as nn
-
 from torch import Tensor
+
 from ..utils import PositionalEncoding
 
+
 class LSTMForCLS(nn.Module):
-    pass
+
+    def __init__(
+        self, vocab_size, embedding_dim, hidden_dim, n_layers, class_num, drop_prob=0.1, pretrain=None
+    ):
+
+        super(LSTMForCLS, self).__init__()
+
+        self.hidden_dim = hidden_dim
+        self.n_layers = n_layers
+        if pretrain == None:
+            self.embedding = nn.Embedding.from_pretrain(pretrain, freeze=False, padding_idx=0)
+        else:
+            self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        n_layers=1
+        self.lstm = nn.LSTM(embedding_dim, hidden_dim, n_layers,
+                            dropout=drop_prob, batch_first=True, bidirectional=True)
+        self.dropout = nn.Dropout(0.1)
+        self.fc = nn.Sequential(
+            nn.Linear(hidden_dim * 2, 400),
+            nn.ReLU(),
+            nn.Linear(400, class_num)
+        )
+        self.softmax = nn.Softmax(dim=-1)
+
+    def forward(self, x):
+
+        embeds = self.embedding(x)
+        lstm_out, hidden = self.lstm(embeds)
+        lstm_out = lstm_out[:, -1, :]
+        out = self.dropout(lstm_out)
+        out = self.fc(out)
+        out = self.softmax(out)
+        return out, hidden
 
 
 class LSTMALForCLS(nn.Module):
-    pass
+
+    def __init__(self, emb, l1, l2):
+
+        super(LSTMALForCLS, self).__init__()
+
+        self.embedding = emb
+        self.layer_1 = l1
+        self.layer_2 = l2
+        self.dropout = nn.Dropout(0.1)
+
+    def forward(self, x, y):
+        
+        batch_size = x.size(0)
+        direction = 2
+
+        emb_x, emb_y, = self.embedding(x, y)
+
+        emb_x, emb_y = self.dropout(emb_x), self.dropout(emb_y)
+        emb_loss = self.embedding.loss()
+
+        layer_1_x, h1, layer_1_y = self.layer_1(emb_x.detach(), emb_y.detach())
+        layer_1_x, layer_1_y = self.dropout(layer_1_x), self.dropout(layer_1_y)
+
+        layer_1_loss = self.layer_1.loss()
+
+        h, c = h1
+        h = h.reshape(direction, batch_size, -1)
+        h1 = (h.detach(), c.detach())
+
+        layer_2_x, h2, layer_2_y = self.layer_2(
+            layer_1_x.detach(), layer_1_y.detach(), h1)
+
+        layer_2_loss = self.layer_2.loss()
+
+        return emb_loss, layer_1_loss, 2*layer_2_loss
+
+    def short_cut_emb(self, x):
+
+        left = self.embedding.f(x)
+        left = left.mean(-1)
+        right = self.embedding.bx(left)
+        right = self.embedding.dy(right)
+        return right
+
+    def short_cut_lstm(self, x):
+
+        left = self.embedding.f(x)
+        left, hidden = self.layer_1.f(left)
+        left = left[:,-1,:]
+        right = self.layer_1.bx(left)
+        right = self.layer_1.dy(right)
+        right = self.embedding.dy(right)
+        return right
 
 
 class TransformerForCLS(nn.Module):
