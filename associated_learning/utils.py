@@ -145,7 +145,7 @@ def multi_class_process(labels, label_num):
     '''
     hot_vecs = []
     for l in labels:
-        b = torch.zeros(label_num)
+        b = torch.zeros(label_num, dtype=int)
         b[l] = 1
         hot_vecs.append(b)
     return hot_vecs

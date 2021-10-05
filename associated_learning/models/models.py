@@ -129,21 +129,10 @@ class EmbeddingAL(ALComponent):
         p_nonzero = (p != 0.).sum(dim=1)
         p = p.sum(dim=1) / p_nonzero
 
-        if not self.reverse:
-            loss_b = self.criterion_br(self.bx(p), q)
-            if self.output_dim == 1:
-                loss_d = self.criterion_ae(
-                    self._t_prime.squeeze(1), self.y.to(torch.float))
-            else:
-                loss_d = self.criterion_ae(
-                    self._t_prime, self.y.to(torch.float))
-        else:
-            raise Exception()
+        self.loss_b = self.criterion_br(self.bx(p), q)
+        self.loss_d = self.criterion_ae(self._t_prime.squeeze(1), self.y.to(torch.float))
 
-        self.loss_b = loss_b.item()
-        self.loss_d = loss_d.item()
-
-        return loss_b + loss_d
+        return self.loss_b + self.loss_d
 
 
 class LinearAL(ALComponent):

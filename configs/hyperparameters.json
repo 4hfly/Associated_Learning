@@ -1,13 +1,14 @@
 {
-   "Dataset": "template",
-   "Mode": "template",
+   "Dataset": "AGNews",
+   "Mode": "TransformerAL",
    "Parameters": {
       "activation": "tanh",
       "batch_size": 256,
-      "class_num": 2,
+      "class_num": 4,
       "embedding_dim": 300,
       "epochs": 50,
       "hidden_dim": 512,
+      "label_dim": 128,
       "lr": 0.001,
       "max_len": 256,
       "nhead": 6,
@@ -17,6 +18,6 @@
       "ramdom_label": false,
       "vocab_size": 30000
    },
-   "Save_dir": "ckpt/",
-   "Title": "Template"
+   "Save_dir": "data/ckpt/",
+   "Title": "AGNews"
 }

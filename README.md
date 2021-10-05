@@ -10,7 +10,7 @@ pip install -r requirements.txt
 ## Datasets
 
 * For AGNews and DBpedia, dataset will be automatically donwloaded during the training.
-* For SST-2, please download the dataset from [GLUE Benchmark](https://gluebenchmark.com/tasks) and put the files into `data/sst2/`.
+* For SST-2, please download the dataset from [GLUE Benchmark](https://gluebenchmark.com/tasks) and put the files into `./data/sst2/`.
 
 ## Execution
 

@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-import wandb
+# import wandb
 
 from .mi_tool import MI_Vis
 from .vis import tsne
@@ -16,9 +16,6 @@ class TransfomerTrainer:
     ):
 
         self.model = model
-        project_name = save_dir.replace('/', '-')
-        wandb.init(project=project_name, entity='team')
-        wandb.watch(self.model)
 
         self.opt = torch.optim.Adam(self.model.parameters(), lr=lr)
         # self.opt = torch.optim.SGD(self.model.parameters(), lr=0.1, momentum=0.9)
@@ -261,7 +258,7 @@ class TransfomerTrainer:
             for k in list(losses.keys()):
                 losses[k] = np.mean(losses[k])
 
-            wandb.log(losses)
+            # wandb.log(losses)
 
             print(f'Epoch {e+1}')
             if self.is_al:
@@ -506,10 +503,6 @@ class ALTrainer:
         self.sample = []
 
         self.model = model
-        project_name = save_dir.replace('/', '-')
-        wandb.init(project=project_name, entity='al-train')
-        config = wandb.config
-        wandb.watch(self.model)
 
         self.opt = torch.optim.Adam(self.model.parameters(), lr=lr)
         self.label_num = label_num
@@ -584,7 +577,7 @@ class ALTrainer:
                 # wandb.log({"lstm2 decode loss": self.model.layer_2.loss_d})
 
                 loss = emb_loss + l1_loss + l2_loss
-                wandb.log({"total loss": loss.item()})
+                # wandb.log({"total loss": loss.item()})
                 loss.backward()
 
                 nn.utils.clip_grad_norm_(
@@ -708,13 +701,11 @@ class ALTrainer:
                 f'train_loss : emb loss {epoch_train_loss[0]}, layer1 loss {epoch_train_loss[1]}, layer2 loss {epoch_train_loss[2]}')
             print(
                 f'train_accuracy : {epoch_train_acc*100} val_accuracy : {epoch_val_acc*100}')
-            wandb.log({"train acc": epoch_train_acc})
-            wandb.log({"valid acc": epoch_val_acc})
+            # wandb.log({"train acc": epoch_train_acc})
+            # wandb.log({"valid acc": epoch_val_acc})
             for k in losses.keys():
                 losses[k] = np.mean(losses[k])
-            wandb.log(
-                losses
-            )
+            # wandb.log(losses)
             # epoch_val_acc =  recall_score(val_label, val_pred, average='macro')
             if epoch_val_acc >= self.valid_acc_min:
                 self.pat = 0
@@ -788,7 +779,7 @@ class ALTrainer:
         x = test_acc/test_count
         if self.f1:
             x = f1_score(f1_pred, f1_label, average='macro')
-        wandb.log({"test acc": x})
+        # wandb.log({"test acc": x})
         all_preds = [int(x) for x in all_preds]
         all_labels = [int(x) for x in all_labels]
         # rec = recall_score(all_labels, all_preds, average='macro')
@@ -943,11 +934,6 @@ class Trainer:
 
         self.model = model
 
-        project_name = save_dir.replace('/', '-normal-')
-        wandb.init(project=project_name, entity='al-train')
-        config = wandb.config
-        wandb.watch(self.model)
-
         self.opt = torch.optim.Adam(self.model.parameters(), lr=lr)
         self.label_num = label_num
         self.epoch_tr_loss, self.epoch_vl_loss = [], []
@@ -1033,8 +1019,8 @@ class Trainer:
             print(
                 f'train_accuracy : {epoch_train_acc*100} val_accuracy : {epoch_val_acc*100}')
 
-            wandb.log({"train acc": epoch_train_acc*100})
-            wandb.log({"valid acc": epoch_val_acc*100})
+            # wandb.log({"train acc": epoch_train_acc*100})
+            # wandb.log({"valid acc": epoch_val_acc*100})
             if epoch_val_acc >= self.valid_acc_min:
                 self.pat = 0
                 self.ckpt_epoch = epoch+1
