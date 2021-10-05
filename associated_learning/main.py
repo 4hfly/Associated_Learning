@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 import argparse
+import json
 
 import torch
 
-from .datasets import AGNews, DBpedia ,IMDb, SST2
+from .datasets import AGNews, DBpedia, IMDb, SST2
 from .models import EmbeddingAL, LSTMAL, TransformerEncoderAL
 from .models import LSTMForCLS, LSTMALForCLS, TransformerForCLS, TransformerALForCLS
 from .trainers import ALTrainer, Trainer, TransfomerTrainer
@@ -241,6 +242,20 @@ def train(args):
         trainer.short_cut_l1()
 
 
+def load_parameters():
+
+    global CONFIG
+    with open("configs/hyperparameters.json", "r", encoding="utf8") as f:
+        CONFIG = json.load(f)
+
+
+def save_parameters():
+
+    with open("configs/hyperparameters.json", "w", encoding="utf8") as f:
+        json.dump(CONFIG, f, ensure_ascii=False, sort_keys=True, indent=3)
+
+
 if __name__ == '__main__':
+    load_parameters()
     args = arg_parser()
     train(args)

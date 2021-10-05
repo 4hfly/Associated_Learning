@@ -1,0 +1,22 @@
+{
+   "Dataset": "template",
+   "Mode": "template",
+   "Parameters": {
+      "activation": "tanh",
+      "batch_size": 256,
+      "class_num": 2,
+      "embedding_dim": 300,
+      "epochs": 50,
+      "hidden_dim": 512,
+      "lr": 0.001,
+      "max_len": 256,
+      "nhead": 6,
+      "nlayers": 2,
+      "one_hot_label": true,
+      "pretrained": "glove",
+      "ramdom_label": false,
+      "vocab_size": 30000
+   },
+   "Save_dir": "ckpt/",
+   "Title": "Template"
+}

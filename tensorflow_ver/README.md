@@ -32,6 +32,7 @@ BibTeX:
 
 ## Usage
 Each folder contains a `main.py` and a `models.py`. The folder name corresponds to the experimental dataset.
+
 Specifying the model you want to test with `--model` flag and run the following:
 ```bash
 python main.py --model <MODEL>
