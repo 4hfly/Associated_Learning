@@ -9,15 +9,22 @@ from ..utils import PositionalEncoding
 class LSTMForCLS(nn.Module):
 
     def __init__(
-        self, vocab_size, embedding_dim, hidden_dim, n_layers, class_num, drop_prob=0.1, pretrain=None
+        self,
+        vocab_size,
+        embedding_dim,
+        hidden_dim,
+        n_layers,
+        class_num,
+        drop_prob=0.1,
+        pretrained=None
     ):
 
         super(LSTMForCLS, self).__init__()
 
         self.hidden_dim = hidden_dim
         self.n_layers = n_layers
-        if pretrain == None:
-            self.embedding = nn.Embedding.from_pretrain(pretrain, freeze=False, padding_idx=0)
+        if pretrained == None:
+            self.embedding = nn.Embedding.from_pretrain(pretrained, freeze=False, padding_idx=0)
         else:
             self.embedding = nn.Embedding(vocab_size, embedding_dim)
         n_layers=1

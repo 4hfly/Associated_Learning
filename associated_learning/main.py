@@ -23,6 +23,7 @@ CONFIG = {
         'vocab_size': 30000,
         'pretrained': 'glove',
         'embedding_dim': 300,
+        'label_dim': 128,
         'hidden_dim': 512,
         'nhead': 6,
         'nlayers': 2,
@@ -47,7 +48,7 @@ def arg_parser():
 
     # model params
     parser.add_argument(
-        '--vocab-size', type=int,
+        '--vocab_size', type=int,
         help='vocab-size',
         default=CONFIG['Parameters']['vocab_size']
     )
@@ -56,14 +57,19 @@ def arg_parser():
         default=CONFIG['Parameters']['pretrained']
     )
     parser.add_argument(
-        '--emb-dim', type=int,
+        '--emb_dim', type=int,
         help='word embedding dimension',
         default=CONFIG['Parameters']['embedding_dim']
     )
     parser.add_argument(
-        '--hid-dim', type=int,
+        '--hid_dim', type=int,
         help='hidden dimension',
         default=CONFIG['Parameters']['hidden_dim']
+    )
+    parser.add_argument(
+        '--label_dim', type=int,
+        help='label hidden dimension',
+        default=CONFIG['Parameters']['label_dim']
     )
     parser.add_argument(
         '--nhead', type=int,
@@ -76,7 +82,7 @@ def arg_parser():
         default=CONFIG['Parameters']['nlayers']
     )
     parser.add_argument(
-        '--class-num', type=int,
+        '--class_num', type=int,
         help='class dimension',
         default=CONFIG['Parameters']['class_num']
     )
@@ -86,7 +92,7 @@ def arg_parser():
         default=CONFIG['Parameters']['activation']
     )
     parser.add_argument(
-        '--one-hot-label', type=bool,
+        '--one_hot_label', type=bool,
         help='if true then use one-hot vector as label input, else integer',
         default=CONFIG['Parameters']['one_hot_label']
     )
@@ -97,7 +103,7 @@ def arg_parser():
         help='lr',
         default=CONFIG['Parameters']['lr'])
     parser.add_argument(
-        '--batch-size', type=int,
+        '--batch_size', type=int,
         help='batch-size',
         default=CONFIG['Parameters']['batch_size']
     )
@@ -105,11 +111,15 @@ def arg_parser():
         '--epoch', type=int,
         default=CONFIG['Parameters']['epochs']
     )
+    parser.add_argument(
+        '--max_len', type=int,
+        default=CONFIG['Parameters']['max_len']
+    )
 
     # dir param
     dir = CONFIG["Save_dir"]
     parser.add_argument(
-        '--save-dir', type=str,
+        '--save_dir', type=str,
         default=f'{dir}{t.lower()}_transformer.pt'
     )
 
@@ -130,9 +140,9 @@ def train(args):
     elif CONFIG['Dataset'] == 'SST':
         data = SST2()
 
-    if CONFIG['mode'] == 'LSTM' or CONFIG['mode'] == 'LSTMAL':
+    if CONFIG['Mode'] == 'LSTM' or CONFIG['Mode'] == 'LSTMAL':
         train_loader, valid_loader, test_loader, vocab = data.load(args)
-    elif CONFIG['mode'] == 'Transformer' or CONFIG['mode'] == 'TransformerAL':
+    elif CONFIG['Mode'] == 'Transformer' or CONFIG['Mode'] == 'TransformerAL':
         train_loader, valid_loader, test_loader, vocab = data.load_with_masks(
             args)
 
@@ -141,11 +151,11 @@ def train(args):
     else:
         w = None
 
-    if CONFIG['mode'] == 'LSTM':
+    if CONFIG['Mode'] == 'LSTM':
 
         model = LSTMForCLS(
             args.vocab_size, args.emb_dim, args.hid_dim,
-            args.nlayers, args.class_num, pretrain=w
+            args.nlayers, args.class_num, pretrained=w
         )
         model = model.to(device)
         print(count_parameters(model))
@@ -156,22 +166,22 @@ def train(args):
             save_dir=args.save_dir
         )
 
-    elif CONFIG['mode'] == 'LSTMAL':
+    elif CONFIG['Mode'] == 'LSTMAL':
 
         act = get_act(args)
         emb = EmbeddingAL(
             (args.vocab_size, args.class_num),
-            (args.word_emb, args.label_emb),
+            (args.emb_dim, args.label_dim),
             lin=args.one_hot_label, pretrained=w, act=act
         )
         l1 = LSTMAL(
-            args.word_emb, args.label_emb,
-            (args.l1_dim, args.l1_dim), dropout=0,
+            args.emb_dim, args.label_dim,
+            (args.hid_dim, args.hid_dim), dropout=0,
             bidirectional=True, act=act
         )
         l2 = LSTMAL(
-            2 * args.l1_dim, args.l1_dim,
-            (args.bridge_dim, args.bridge_dim), dropout=0,
+            2 * args.hid_dim, args.hid_dim,
+            (args.hid_dim, args.hid_dim), dropout=0,
             bidirectional=True, act=act
         )
 
@@ -184,11 +194,11 @@ def train(args):
             save_dir=args.save_dir
         )
 
-    elif CONFIG['mode'] == 'Transformer':
+    elif CONFIG['Mode'] == 'Transformer':
 
         model = TransformerForCLS(
             args.vocab_size, args.emb_dim, args.hid_dim,
-            args.nhead, args.nlayers, args.class_num, pretrain=w
+            args.nhead, args.nlayers, args.class_num, pretrained=w
         )
         model = model.to(device)
         print(count_parameters(model))
@@ -199,7 +209,7 @@ def train(args):
             save_dir=args.save_dir, is_al=False
         )
 
-    elif CONFIG['mode'] == 'TransformerAL':
+    elif CONFIG['Mode'] == 'TransformerAL':
 
         act = get_act(args)
         emb = EmbeddingAL(
@@ -237,7 +247,7 @@ def train(args):
     else:
         trainer.eval()
 
-    if CONFIG['mode'] == 'Transformer' or CONFIG['mode'] == 'TransformerAL':
+    if CONFIG['Mode'] == 'Transformer' or CONFIG['Mode'] == 'TransformerAL':
         trainer.short_cut_emb()
         trainer.short_cut_l1()
 

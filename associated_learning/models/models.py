@@ -90,10 +90,10 @@ class EmbeddingAL(ALComponent):
         act: nn.Module = None,
     ) -> None:
 
-        if act == None:
+        if act is None:
             act = nn.ELU()
 
-        if pretrained:
+        if pretrained is not None:
             f = nn.Embedding.from_pretrained(
                 pretrained, padding_idx=padding_idx, freeze=False
             )
