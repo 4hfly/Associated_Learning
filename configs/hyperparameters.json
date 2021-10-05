@@ -1,6 +1,6 @@
 {
-   "Dataset": "AGNews",
-   "Mode": "TransformerAL",
+   "Dataset": "Template",
+   "Mode": "LSTM",
    "Parameters": {
       "activation": "tanh",
       "batch_size": 256,
@@ -19,5 +19,5 @@
       "vocab_size": 30000
    },
    "Save_dir": "data/ckpt/",
-   "Title": "AGNews"
+   "Title": "Template"
 }

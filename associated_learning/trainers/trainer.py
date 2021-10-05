@@ -973,7 +973,7 @@ class Trainer:
             train_count = 0
             for inputs, labels in self.train_loader:
 
-                # labels = torch.argmax(labels.long(), dim=1)
+                labels = torch.argmax(labels.long(), dim=1)
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
 
                 self.opt.zero_grad()

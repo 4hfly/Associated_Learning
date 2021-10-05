@@ -102,8 +102,9 @@ class EmbeddingAL(ALComponent):
                 num_embeddings[0], embedding_dim[0], padding_idx=padding_idx
             )
 
-        g = nn.Embedding(
-            num_embeddings[1], embedding_dim[1], padding_idx=padding_idx
+        g = nn.Sequential(
+            nn.Linear(num_embeddings[1], embedding_dim[1], bias=False),
+            act
         )
         # bridge function
         bx = nn.Sequential(
@@ -130,7 +131,8 @@ class EmbeddingAL(ALComponent):
         p = p.sum(dim=1) / p_nonzero
 
         self.loss_b = self.criterion_br(self.bx(p), q)
-        self.loss_d = self.criterion_ae(self._t_prime.squeeze(1), self.y.to(torch.float))
+        self.loss_d = self.criterion_ae(
+            self._t_prime.squeeze(1), self.y.to(torch.float))
 
         return self.loss_b + self.loss_d
 
